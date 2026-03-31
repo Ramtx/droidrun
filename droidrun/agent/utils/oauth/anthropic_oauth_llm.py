@@ -468,8 +468,10 @@ class AnthropicOAuthLLM(CustomLLM):
         redirect_uri = "https://platform.claude.com/oauth/code/callback"
         original_authorize_url = self.authorize_url
 
-        if "/cai/oauth/authorize" in self.authorize_url:
-            self.authorize_url = DEFAULT_AUTHORIZE_URL
+        # Manual flow uses the modern /cai/ authorize URL with code=true,
+        # but redirects to platform.claude.com/oauth/code/callback
+        if "/cai/oauth/authorize" not in self.authorize_url:
+            self.authorize_url = DEFAULT_MODERN_AUTHORIZE_URL
 
         auth_url = self._build_auth_url(
             redirect_uri=redirect_uri,

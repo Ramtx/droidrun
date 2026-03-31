@@ -23,6 +23,13 @@ from rich.text import Text
 
 from droidrun import ResultEvent, DroidAgent
 from droidrun.log_handlers import CLILogHandler, configure_logging
+from droidrun.cli.configure_prompts import (
+    SelectChoice,
+    confirm_prompt,
+    normalize_role_targets,
+    select_prompt,
+    text_prompt,
+)
 from droidrun.cli.event_handler import EventHandler
 from droidrun.config_manager import ConfigLoader
 from droidrun.cli.device_commands import device_cli
@@ -872,112 +879,147 @@ def tui():
     run_tui()
 
 
-@cli.group(name="llm")
-def llm_group():
-    """LLM provider setup and configuration commands."""
-    pass
-
-
-@llm_group.command("setup")
+@cli.command(name="configure")
+@click.option(
+    "--provider",
+    type=str,
+    default=None,
+    help="Provider family (gemini, openai, anthropic, ollama, openai_like, minimax, zai).",
+)
+@click.option(
+    "--auth-mode",
+    type=str,
+    default=None,
+    help="Auth mode for the selected provider family.",
+)
+@click.option("--model", type=str, default=None, help="Model to configure.")
+@click.option("--api-key", type=str, default=None, help="API key for API-key providers.")
+@click.option("--base-url", type=str, default=None, help="Base URL override for compatible providers.")
 @click.option(
     "--apply-to-all/--single-role",
-    default=True,
-    show_default=True,
-    help="Apply the selected provider setup to manager, executor, fast_agent, app_opener, and structured_output.",
+    default=None,
+    help="Apply the selected provider setup to all main roles or a specific role.",
 )
-def llm_setup(apply_to_all: bool):
-    """Interactive provider-family setup for LLM credentials and model selection."""
+@click.option(
+    "--role",
+    "roles",
+    multiple=True,
+    type=click.Choice(
+        ["manager", "executor", "fast_agent", "app_opener", "structured_output"],
+        case_sensitive=False,
+    ),
+    help="Specific role to configure when not applying to all. Can be repeated.",
+)
+def configure(
+    provider: str | None,
+    auth_mode: str | None,
+    model: str | None,
+    api_key: str | None,
+    base_url: str | None,
+    apply_to_all: bool | None,
+    roles: tuple[str, ...],
+):
+    """Configure LLM provider, auth mode, model, and role application."""
     config = ConfigLoader.load()
 
     families = family_choices()
     family_ids = [family.id for family in families]
     family_labels = {family.id: family.display_name for family in families}
 
-    family_id = click.prompt(
-        "Provider",
-        type=click.Choice(family_ids, case_sensitive=False),
-        default="gemini",
-        show_choices=True,
-    )
+    if provider is not None:
+        family_id = click.Choice(family_ids, case_sensitive=False).convert(
+            provider, None, None
+        )
+    else:
+        family_id = select_prompt(
+            "Choose provider",
+            [SelectChoice(value=family.id, label=family.display_name) for family in families],
+            default="gemini",
+        )
     console.print(f"Selected provider family: {family_labels[family_id]}")
 
     modes = auth_mode_choices(family_id)
-    auth_mode = modes[0]
-    if len(modes) > 1:
-        auth_mode = click.prompt(
-            "Auth mode",
-            type=click.Choice(list(modes), case_sensitive=False),
+    if auth_mode is not None:
+        selected_auth_mode = click.Choice(list(modes), case_sensitive=False).convert(
+            auth_mode, None, None
+        )
+    elif len(modes) > 1:
+        selected_auth_mode = select_prompt(
+            "Choose auth mode",
+            [SelectChoice(value=mode, label=mode.replace("_", " ")) for mode in modes],
             default=modes[0],
-            show_choices=True,
         )
+    else:
+        selected_auth_mode = modes[0]
 
-    models = list(variant_models(family_id, auth_mode))
+    models = list(variant_models(family_id, selected_auth_mode))
     default_model = models[0] if models else ""
-    model = (
-        click.prompt(
-            "Model",
-            type=click.Choice(models, case_sensitive=True),
-            default=default_model,
-            show_choices=True,
+    selected_model = (
+        click.Choice(models, case_sensitive=True).convert(model, None, None)
+        if model is not None and models
+        else (
+            select_prompt(
+                "Choose model",
+                [SelectChoice(value=item, label=item) for item in models],
+                default=default_model,
+            )
+            if models
+            else text_prompt("Model")
         )
-        if models
-        else click.prompt("Model", type=str)
     )
 
-    api_key: str | None = None
-    base_url: str | None = None
     credential_path: str | None = None
 
     variant = next(
         variant
         for variant in next(f for f in families if f.id == family_id).variants
-        if variant.auth_mode == auth_mode
+        if variant.auth_mode == selected_auth_mode
     )
 
-    if variant.requires_api_key:
-        api_key = click.prompt("API key", hide_input=True).strip()
-    if variant.requires_base_url:
-        base_url = click.prompt(
-            "Base URL",
-            type=str,
-            default=variant.base_url or "",
-            show_default=bool(variant.base_url),
-        ).strip()
+    selected_api_key = api_key
+    selected_base_url = base_url
+
+    if variant.requires_api_key and not selected_api_key:
+        selected_api_key = text_prompt("API key", secret=True)
+    if variant.requires_base_url and not selected_base_url:
+        selected_base_url = text_prompt(
+            "Base URL", default=variant.base_url or "", secret=False
+        )
     if variant.credential_path:
         credential_path = variant.credential_path
 
     if variant.id == "openai_oauth" and credential_path:
-        _run_openai_oauth_login(credential_path=credential_path, model=model)
+        _run_openai_oauth_login(credential_path=credential_path, model=selected_model)
     elif variant.id == "anthropic_oauth" and credential_path:
-        _run_anthropic_oauth_login(credential_path=credential_path, model=model)
+        _run_anthropic_oauth_login(
+            credential_path=credential_path, model=selected_model
+        )
     elif variant.id == "gemini_oauth_code_assist" and credential_path:
-        _run_gemini_oauth_login(credential_path=credential_path, model=model)
+        _run_gemini_oauth_login(credential_path=credential_path, model=selected_model)
 
-    roles = (
-        ("manager", "executor", "fast_agent", "app_opener", "structured_output")
-        if apply_to_all
-        else ("manager",)
-    )
+    selected_apply_to_all = apply_to_all
+    if selected_apply_to_all is None:
+        selected_apply_to_all = confirm_prompt(
+            "Apply this configuration to all main roles?", default=True
+        )
+    target_roles = normalize_role_targets(selected_apply_to_all, roles)
 
     selection = SetupSelection(
         family_id=family_id,
         variant_id=variant.id,
-        auth_mode=auth_mode,
-        model=model,
-        api_key=api_key,
-        base_url=base_url,
+        auth_mode=selected_auth_mode,
+        model=selected_model,
+        api_key=selected_api_key,
+        base_url=selected_base_url,
         credential_path=credential_path,
     )
-    apply_selection_to_roles(config, selection, roles)
+    apply_selection_to_roles(config, selection, target_roles)
     ConfigLoader.save(config)
 
-    console.print("[green]LLM setup saved.[/]")
+    console.print("[green]Configuration saved.[/]")
     console.print(f"[blue]Provider:[/] {family_labels[family_id]} ({variant.id})")
-    console.print(f"[blue]Model:[/] {model}")
-    if apply_to_all:
-        console.print("[blue]Applied to:[/] manager, executor, fast_agent, app_opener, structured_output")
-    else:
-        console.print("[blue]Applied to:[/] manager")
+    console.print(f"[blue]Model:[/] {selected_model}")
+    console.print(f"[blue]Applied to:[/] {', '.join(target_roles)}")
 
 
 @cli.group()

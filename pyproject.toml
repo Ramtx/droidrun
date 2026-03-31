@@ -17,6 +17,7 @@ dependencies = [
     "textual>=6.11.0",
     "mcp>=1.26.0",
     "python-dotenv>=1.2.1",
+    "InquirerPy>=0.3.4",
     "llama-index-llms-openai>=0.5.6",
     "llama-index-llms-openai-like>=0.5.1",
     "llama-index-llms-google-genai>=0.8.5",
