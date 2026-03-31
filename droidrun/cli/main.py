@@ -5,6 +5,8 @@ Droidrun CLI - Command line interface for controlling Android devices through LL
 import asyncio
 import logging
 import os
+import shutil
+import subprocess
 import sys
 import warnings
 from contextlib import nullcontext
@@ -37,6 +39,18 @@ from droidrun.portal import (
 )
 from droidrun.agent.external import list_agents
 from droidrun.agent.utils.llm_picker import load_llm
+from droidrun.agent.utils.oauth.anthropic_oauth_llm import AnthropicOAuthLLM
+from droidrun.agent.utils.oauth.anthropic_oauth_llm import DEFAULT_MODERN_LOGIN_SCOPE
+from droidrun.agent.utils.oauth.gemini_oauth_code_assist_llm import (
+    GeminiOAuthCodeAssistLLM,
+)
+from droidrun.agent.utils.oauth.openai_oauth_llm import (
+    DEFAULT_OPENAI_OAUTH_CALLBACK_HOST,
+    DEFAULT_OPENAI_OAUTH_CALLBACK_PATH,
+    DEFAULT_OPENAI_OAUTH_CALLBACK_PORT,
+    DEFAULT_OPENAI_OAUTH_CREDENTIAL_PATH,
+    OpenAIOAuth,
+)
 from droidrun.telemetry import print_telemetry_message
 
 # Suppress all warnings
@@ -310,6 +324,57 @@ def cli():
     pass
 
 
+def _print_oauth_login_success(provider_label: str, credential_path: str) -> None:
+    console.print(f"[green]{provider_label} login succeeded.[/]")
+    console.print(f"[blue]Credentials saved to:[/] {Path(credential_path).expanduser()}")
+
+
+def _run_claude_auth_login(credential_path: str) -> None:
+    claude_bin = shutil.which("claude")
+    if not claude_bin:
+        raise click.ClickException(
+            "Claude CLI is not installed or not on PATH. Use --custom-oauth to use Droidrun's built-in flow."
+        )
+
+    try:
+        subprocess.run([claude_bin, "auth", "login"], check=True)
+    except subprocess.CalledProcessError as exc:
+        raise click.ClickException(f"`claude auth login` failed with exit code {exc.returncode}.") from exc
+
+    cred_path = Path(credential_path).expanduser()
+    if not cred_path.exists():
+        raise click.ClickException(
+            f"`claude auth login` completed but {cred_path} was not found."
+        )
+
+
+def _has_claude_cli() -> bool:
+    return shutil.which("claude") is not None
+
+
+def _save_anthropic_setup_token(credential_path: str, token: str) -> None:
+    cred_path = Path(credential_path).expanduser()
+    cred_path.parent.mkdir(parents=True, exist_ok=True)
+
+    existing: dict[str, object] = {}
+    if cred_path.exists():
+        try:
+            loaded = json.loads(cred_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                existing = loaded
+        except Exception:
+            existing = {}
+
+    existing["claudeAiOauth"] = {
+        "accessToken": token,
+        "refreshToken": None,
+        "expiresAt": None,
+        "scopes": [],
+    }
+    cred_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+    os.chmod(cred_path, 0o600)
+
+
 try:
     _available_agents = list_agents()
 except Exception:
@@ -331,7 +396,7 @@ except Exception:
 @click.option(
     "--provider",
     "-p",
-    help="LLM provider (OpenAI, Ollama, Anthropic, GoogleGenAI, DeepSeek)",
+    help="LLM provider (OpenAI, openai_oauth, Ollama, Anthropic, anthropic_oauth, GoogleGenAI, gemini_oauth_code_assist, DeepSeek)",
     default=None,
 )
 @click.option(
@@ -703,6 +768,293 @@ def tui():
     from droidrun.cli.tui import run_tui
 
     run_tui()
+
+
+@cli.group()
+def openai():
+    """OpenAI OAuth commands."""
+    pass
+
+
+@openai.command("login")
+@click.option(
+    "--credential-path",
+    default=str(DEFAULT_OPENAI_OAUTH_CREDENTIAL_PATH),
+    show_default=True,
+    help="Where to store OpenAI OAuth credentials.",
+)
+@click.option("--model", default=None, help="Optional model override for later API calls.")
+@click.option(
+    "--timeout",
+    type=float,
+    default=300.0,
+    show_default=True,
+    help="Max seconds to wait for the browser callback.",
+)
+@click.option(
+    "--callback-host",
+    default=DEFAULT_OPENAI_OAUTH_CALLBACK_HOST,
+    show_default=True,
+    help="Host to bind the local OAuth callback server.",
+)
+@click.option(
+    "--callback-port",
+    type=int,
+    default=DEFAULT_OPENAI_OAUTH_CALLBACK_PORT,
+    show_default=True,
+    help="Port to bind the local OAuth callback server.",
+)
+@click.option(
+    "--callback-path",
+    default=DEFAULT_OPENAI_OAUTH_CALLBACK_PATH,
+    show_default=True,
+    help="Callback path for the local OAuth server.",
+)
+@click.option(
+    "--open-browser/--no-browser",
+    default=True,
+    show_default=True,
+    help="Open the authorization URL automatically.",
+)
+def openai_login(
+    credential_path: str,
+    model: str | None,
+    timeout: float,
+    callback_host: str,
+    callback_port: int,
+    callback_path: str,
+    open_browser: bool,
+):
+    """Login with ChatGPT/OpenAI OAuth and save credentials locally."""
+    llm = OpenAIOAuth(model=model, oauth_credential_path=credential_path)
+    llm.login(
+        open_browser=open_browser,
+        timeout_seconds=timeout,
+        callback_host=callback_host,
+        callback_port=callback_port,
+        callback_path=callback_path,
+        redirect_host=callback_host,
+    )
+    _print_oauth_login_success("OpenAI", credential_path)
+
+
+@cli.group()
+def anthropic():
+    """Anthropic OAuth commands."""
+    pass
+
+
+@anthropic.command("login")
+@click.option(
+    "--credential-path",
+    default="~/.claude/.credentials.json",
+    show_default=True,
+    help="Where to store Anthropic OAuth credentials.",
+)
+@click.option("--model", default=None, help="Optional model override for later API calls.")
+@click.option(
+    "--timeout",
+    type=float,
+    default=300.0,
+    show_default=True,
+    help="Max seconds to wait for the browser callback.",
+)
+@click.option(
+    "--callback-host",
+    default="127.0.0.1",
+    show_default=True,
+    help="Host to bind the local OAuth callback server.",
+)
+@click.option(
+    "--callback-port",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Port to bind the local OAuth callback server. Use 0 for auto.",
+)
+@click.option(
+    "--callback-path",
+    default="/callback",
+    show_default=True,
+    help="Callback path for the local OAuth server.",
+)
+@click.option(
+    "--manual",
+    is_flag=True,
+    default=False,
+    help="Use Anthropic's manual copy/paste code flow instead of localhost callback.",
+)
+@click.option(
+    "--authorize-url",
+    default="https://claude.com/cai/oauth/authorize",
+    show_default=True,
+    help="Anthropic OAuth authorize URL.",
+)
+@click.option(
+    "--login-scope",
+    default=DEFAULT_MODERN_LOGIN_SCOPE,
+    show_default=True,
+    help="Anthropic OAuth login scope string.",
+)
+@click.option(
+    "--official-cli/--custom-oauth",
+    default=True,
+    show_default=True,
+    help="Use the official `claude auth login` flow instead of Droidrun's custom OAuth implementation.",
+)
+@click.option(
+    "--open-browser/--no-browser",
+    default=True,
+    show_default=True,
+    help="Open the authorization URL automatically.",
+)
+def anthropic_login(
+    credential_path: str,
+    model: str | None,
+    timeout: float,
+    callback_host: str,
+    callback_port: int,
+    callback_path: str,
+    manual: bool,
+    authorize_url: str,
+    login_scope: str,
+    official_cli: bool,
+    open_browser: bool,
+):
+    """Login with Claude OAuth and save credentials locally."""
+    if official_cli:
+        if not _has_claude_cli():
+            console.print(
+                "[yellow]Claude CLI not found. Falling back to Droidrun custom Anthropic OAuth flow.[/]"
+            )
+            official_cli = False
+            manual = True
+            open_browser = False
+            authorize_url = "https://platform.claude.com/oauth/authorize"
+            login_scope = "org:create_api_key user:profile"
+        else:
+            if manual:
+                raise click.ClickException("--manual is only supported with --custom-oauth.")
+            _run_claude_auth_login(credential_path)
+            _print_oauth_login_success("Anthropic", credential_path)
+            return
+
+    llm_kwargs = {
+        "credential_path": credential_path,
+        "authorize_url": authorize_url,
+        "login_scope": login_scope,
+    }
+    if model is not None:
+        llm_kwargs["model"] = model
+    llm = AnthropicOAuthLLM(**llm_kwargs)
+    if manual:
+        llm.login_manual(open_browser=open_browser)
+    else:
+        llm.login(
+            open_browser=open_browser,
+            timeout_seconds=timeout,
+            callback_host=callback_host,
+            callback_port=callback_port,
+            callback_path=callback_path,
+        )
+    _print_oauth_login_success("Anthropic", credential_path)
+
+
+@anthropic.command("setup-token")
+@click.option(
+    "--credential-path",
+    default="~/.claude/.credentials.json",
+    show_default=True,
+    help="Where to store the Anthropic setup-token.",
+)
+@click.option(
+    "--token",
+    default=None,
+    help="Setup-token value. If omitted, you will be prompted.",
+)
+def anthropic_setup_token(credential_path: str, token: str | None):
+    """Paste and save an Anthropic setup-token from `claude setup-token`."""
+    if token is None:
+        console.print("Run `claude setup-token`, then paste the token here.")
+        token = click.prompt("Anthropic setup-token", hide_input=False).strip()
+
+    if not token:
+        raise click.ClickException("Setup-token was empty.")
+    if len(token.strip()) < 80:
+        raise click.ClickException("Setup-token looks too short; paste the full token.")
+
+    _save_anthropic_setup_token(credential_path, token.strip())
+    _print_oauth_login_success("Anthropic setup-token", credential_path)
+
+
+@cli.group(name="gemini")
+def gemini_group():
+    """Gemini OAuth commands."""
+    pass
+
+
+@gemini_group.command("login")
+@click.option(
+    "--credential-path",
+    default="~/.gemini/oauth_creds.json",
+    show_default=True,
+    help="Where to store Gemini OAuth credentials.",
+)
+@click.option("--model", default=None, help="Optional model override for later API calls.")
+@click.option(
+    "--timeout",
+    type=float,
+    default=300.0,
+    show_default=True,
+    help="Max seconds to wait for the browser callback.",
+)
+@click.option(
+    "--callback-host",
+    default="127.0.0.1",
+    show_default=True,
+    help="Host to bind the local OAuth callback server.",
+)
+@click.option(
+    "--callback-port",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Port to bind the local OAuth callback server. Use 0 for auto.",
+)
+@click.option(
+    "--callback-path",
+    default="/oauth2callback",
+    show_default=True,
+    help="Callback path for the local OAuth server.",
+)
+@click.option(
+    "--open-browser/--no-browser",
+    default=True,
+    show_default=True,
+    help="Open the authorization URL automatically.",
+)
+def gemini_login(
+    credential_path: str,
+    model: str | None,
+    timeout: float,
+    callback_host: str,
+    callback_port: int,
+    callback_path: str,
+    open_browser: bool,
+):
+    """Login with Gemini Code Assist OAuth and save credentials locally."""
+    llm = GeminiOAuthCodeAssistLLM(
+        model=model or "gemini-3.1-pro-preview",
+        credential_path=credential_path,
+    )
+    llm.login(
+        open_browser=open_browser,
+        timeout_seconds=timeout,
+        callback_host=callback_host,
+        callback_port=callback_port,
+        callback_path=callback_path,
+    )
+    _print_oauth_login_success("Gemini", credential_path)
 
 
 async def test(

@@ -2,6 +2,11 @@ import importlib
 import logging
 from typing import TYPE_CHECKING, Any
 
+from droidrun.agent.utils.oauth import (
+    anthropic_oauth_llm,
+    gemini_oauth_code_assist_llm,
+    openai_oauth_llm,
+)
 from llama_index.core.llms.llm import LLM
 
 from droidrun.agent.usage import track_usage
@@ -43,6 +48,16 @@ def load_llm(provider_name: str, model: str | None = None, **kwargs: Any) -> LLM
     # Add model to kwargs if provided as positional argument
     if model is not None:
         kwargs["model"] = model
+    filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
+
+    if provider_name == "openai_oauth":
+        return openai_oauth_llm.OpenAIOAuth(**filtered_kwargs)
+    elif provider_name == "anthropic_oauth":
+        return anthropic_oauth_llm.AnthropicOAuthLLM(**filtered_kwargs)
+    elif provider_name == "gemini_oauth_code_assist":
+        return gemini_oauth_code_assist_llm.GeminiOAuthCodeAssistLLM(
+            **filtered_kwargs
+        )
 
     if provider_name == "OpenAILike":
         module_provider_part = "openai_like"
@@ -88,9 +103,6 @@ def load_llm(provider_name: str, model: str | None = None, **kwargs: Any) -> LLM
             raise TypeError(
                 f"Class '{provider_name}' found in '{module_path}' is not a valid LLM subclass."
             )
-
-        # Filter out None values from kwargs
-        filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
         # Initialize
         logger.debug(

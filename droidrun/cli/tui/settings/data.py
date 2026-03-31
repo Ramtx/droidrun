@@ -12,8 +12,11 @@ from droidrun.config_manager.env_keys import load_env_keys, save_env_keys
 
 PROVIDERS = [
     "GoogleGenAI",
+    "gemini_oauth_code_assist",
     "OpenAI",
+    "openai_oauth",
     "Anthropic",
+    "anthropic_oauth",
     "Ollama",
     "OpenAILike",
 ]
@@ -31,8 +34,11 @@ PROVIDER_ENV_KEY_SLOT: dict[str, str] = {
 # Which fields are relevant per provider.
 PROVIDER_FIELDS: dict[str, dict[str, Any]] = {
     "GoogleGenAI": {"api_key": True, "base_url": False},
+    "gemini_oauth_code_assist": {"api_key": False, "base_url": False},
     "OpenAI": {"api_key": True, "base_url": False},
+    "openai_oauth": {"api_key": False, "base_url": False},
     "Anthropic": {"api_key": True, "base_url": False},
+    "anthropic_oauth": {"api_key": False, "base_url": False},
     "Ollama": {"api_key": False, "base_url": True},
     "OpenAILike": {"api_key": True, "base_url": True},
 }
