@@ -577,6 +577,7 @@ class AnthropicOAuthLLM(CustomLLM):
 
     @llm_chat_callback()
     def chat(self, messages: Sequence[ChatMessage], **kwargs: Any) -> ChatResponse:
+        kwargs.pop("formatted", None)
         provider_messages, system_lines = self._to_provider_messages(messages)
         token = self._resolve_access_token()
 
@@ -609,7 +610,16 @@ class AnthropicOAuthLLM(CustomLLM):
             json=payload,
             timeout=self.timeout,
         )
-        res.raise_for_status()
+        if not res.ok:
+            detail: str
+            try:
+                detail = json.dumps(res.json(), ensure_ascii=False)
+            except Exception:
+                detail = res.text
+            raise requests.HTTPError(
+                f"{res.status_code} Client Error for url: {res.url} :: {detail}",
+                response=res,
+            )
         data = res.json()
         text = self._extract_text(data)
 
@@ -630,6 +640,7 @@ class AnthropicOAuthLLM(CustomLLM):
 
     @llm_completion_callback()
     def complete(self, prompt: str, **kwargs: Any) -> CompletionResponse:
+        kwargs.pop("formatted", None)
         resp = self.chat([ChatMessage(role=MessageRole.USER, content=prompt)], **kwargs)
         return CompletionResponse(
             text=resp.message.content or "",

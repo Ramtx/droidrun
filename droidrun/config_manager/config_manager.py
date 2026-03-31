@@ -19,6 +19,9 @@ class LLMProfile:
     temperature: float = 0.2
     base_url: Optional[str] = None
     api_base: Optional[str] = None
+    provider_family: Optional[str] = None
+    auth_mode: Optional[str] = None
+    credential_path: Optional[str] = None
     kwargs: Dict[str, Any] = field(default_factory=dict)
 
     def to_load_llm_kwargs(self) -> Dict[str, Any]:
@@ -32,6 +35,8 @@ class LLMProfile:
             result["base_url"] = self.base_url
         if self.api_base:
             result["api_base"] = self.api_base
+        if self.credential_path:
+            result["credential_path"] = self.credential_path
         # Merge additional kwargs
         result.update(self.kwargs)
         return result

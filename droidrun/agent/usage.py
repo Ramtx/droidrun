@@ -16,6 +16,7 @@ SUPPORTED_PROVIDERS = [
     "GeminiOAuthCodeAssistLLM",
     "OpenAI",
     "OpenAIOAuth",
+    "MiniMax",
     "openai_llm",
     "Anthropic",
     "Anthropic_LLM",
@@ -79,14 +80,19 @@ def get_usage_from_response(provider: str, chat_rsp: ChatResponse) -> UsageResul
         or provider == "OpenAILike"
         or provider == "openai_llm"
         or provider == "OpenAIOAuth"
+        or provider == "MiniMax"
     ):
-        from openai.types import CompletionUsage as OpenAIUsage
-
-        usage: OpenAIUsage = rsp.usage
+        usage = rsp.usage
         return UsageResult(
-            request_tokens=usage.prompt_tokens,
-            response_tokens=usage.completion_tokens,
-            total_tokens=usage.total_tokens,
+            request_tokens=_usage_field(
+                usage, "prompt_tokens", "input_tokens", "promptTokenCount"
+            ),
+            response_tokens=_usage_field(
+                usage, "completion_tokens", "output_tokens", "completionTokenCount"
+            ),
+            total_tokens=_usage_field(
+                usage, "total_tokens", "totalTokenCount", "total_token_count"
+            ),
             requests=1,
         )
     elif (

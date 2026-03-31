@@ -48,18 +48,28 @@ def load_llm(provider_name: str, model: str | None = None, **kwargs: Any) -> LLM
     # Add model to kwargs if provided as positional argument
     if model is not None:
         kwargs["model"] = model
-    filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
-
     if provider_name == "openai_oauth":
+        if "credential_path" in kwargs and "oauth_credential_path" not in kwargs:
+            kwargs["oauth_credential_path"] = kwargs.pop("credential_path")
+        filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
         return openai_oauth_llm.OpenAIOAuth(**filtered_kwargs)
     elif provider_name == "anthropic_oauth":
+        filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
         return anthropic_oauth_llm.AnthropicOAuthLLM(**filtered_kwargs)
     elif provider_name == "gemini_oauth_code_assist":
+        filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
         return gemini_oauth_code_assist_llm.GeminiOAuthCodeAssistLLM(
             **filtered_kwargs
         )
 
-    if provider_name == "OpenAILike":
+    if provider_name == "ZAI":
+        module_provider_part = "openai_like"
+        provider_name = "OpenAILike"
+        kwargs.setdefault("is_chat_model", True)
+        kwargs.setdefault("base_url", "https://api.z.ai/api/paas/v4")
+        if "base_url" in kwargs and "api_base" not in kwargs:
+            kwargs["api_base"] = kwargs.pop("base_url")
+    elif provider_name == "OpenAILike":
         module_provider_part = "openai_like"
         kwargs.setdefault("is_chat_model", True)
         # OpenAILike uses api_base, not base_url - handle both for convenience
@@ -77,6 +87,7 @@ def load_llm(provider_name: str, model: str | None = None, **kwargs: Any) -> LLM
             module_provider_part = lower_provider_name.replace("-", "_")
     module_path = f"llama_index.llms.{module_provider_part}"
     install_package_name = f"llama-index-llms-{module_provider_part.replace('_', '-')}"
+    filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
     try:
         logger.debug(f"Attempting to import module: {module_path}")

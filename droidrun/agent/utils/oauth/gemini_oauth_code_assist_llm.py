@@ -34,8 +34,12 @@ DEFAULT_CODE_ASSIST_ONBOARD_METHOD = "onboardUser"
 DEFAULT_TOKEN_URL = "https://oauth2.googleapis.com/token"
 DEFAULT_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 DEFAULT_CREDENTIAL_PATH = "~/.gemini/oauth_creds.json"
-DEFAULT_CLIENT_ID = os.environ.get("GEMINI_OAUTH_CLIENT_ID", "")
-DEFAULT_CLIENT_SECRET = os.environ.get("GEMINI_OAUTH_CLIENT_SECRET", "")
+
+# Same installed-app OAuth client used by gemini-cli.
+DEFAULT_CLIENT_ID = (
+    "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
+)
+DEFAULT_CLIENT_SECRET = "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"
 
 
 class GeminiOAuthCodeAssistLLM(CustomLLM):
@@ -300,32 +304,20 @@ class GeminiOAuthCodeAssistLLM(CustomLLM):
             return False
         return time.time() >= (self._access_token_expiry - self.refresh_buffer_seconds)
 
-    def _require_oauth_client_config(self) -> tuple[str, str]:
-        client_id = self.client_id.strip()
-        client_secret = self.client_secret.strip()
-        if not client_id or not client_secret:
-            raise ValueError(
-                "Gemini OAuth client credentials are not configured. Set "
-                "GEMINI_OAUTH_CLIENT_ID and GEMINI_OAUTH_CLIENT_SECRET, or pass "
-                "client_id and client_secret explicitly."
-            )
-        return client_id, client_secret
-
     def _refresh_access_token(self) -> str:
         refresh_token = self._cached_refresh_token or self.refresh_token
         if not refresh_token:
             raise ValueError(
                 "No refresh token available. Provide `refresh_token` or a credential file."
             )
-        client_id, client_secret = self._require_oauth_client_config()
 
         response = self._session.post(
             self.token_url,
             data={
                 "grant_type": "refresh_token",
                 "refresh_token": refresh_token,
-                "client_id": client_id,
-                "client_secret": client_secret,
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
             },
             timeout=self.timeout,
         )
@@ -350,15 +342,14 @@ class GeminiOAuthCodeAssistLLM(CustomLLM):
         return access_token
 
     def _exchange_authorization_code(self, code: str, redirect_uri: str) -> str:
-        client_id, client_secret = self._require_oauth_client_config()
         response = self._session.post(
             self.token_url,
             data={
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": redirect_uri,
-                "client_id": client_id,
-                "client_secret": client_secret,
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
             },
             timeout=self.timeout,
         )
@@ -394,9 +385,8 @@ class GeminiOAuthCodeAssistLLM(CustomLLM):
                 "https://www.googleapis.com/auth/userinfo.profile",
             ]
         )
-        client_id, _ = self._require_oauth_client_config()
         query = {
-            "client_id": client_id,
+            "client_id": self.client_id,
             "redirect_uri": redirect_uri,
             "response_type": "code",
             "scope": scope,
@@ -590,6 +580,7 @@ class GeminiOAuthCodeAssistLLM(CustomLLM):
 
     @llm_chat_callback()
     def chat(self, messages: Sequence[ChatMessage], **kwargs: Any) -> ChatResponse:
+        kwargs.pop("formatted", None)
         token = self._resolve_access_token()
         self._ensure_project_id(token)
         payload = self._to_code_assist_request(messages, **kwargs)
@@ -620,6 +611,7 @@ class GeminiOAuthCodeAssistLLM(CustomLLM):
 
     @llm_completion_callback()
     def complete(self, prompt: str, **kwargs: Any) -> CompletionResponse:
+        kwargs.pop("formatted", None)
         chat_response = self.chat(
             [ChatMessage(role=MessageRole.USER, content=prompt)],
             **kwargs,

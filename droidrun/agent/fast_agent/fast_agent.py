@@ -438,6 +438,7 @@ class FastAgent(Workflow):
             return event
 
         results: list[ToolResult] = []
+        had_tool_failure = False
 
         for call in tool_calls:
             logger.debug(f"Executing: {call.name}({call.parameters})")
@@ -454,6 +455,8 @@ class FastAgent(Workflow):
                 action_result = await self.registry.execute(
                     call.name, call.parameters, self.action_ctx, workflow_ctx=ctx
                 )
+            if not action_result.success:
+                had_tool_failure = True
             results.append(
                 ToolResult(
                     name=call.name,
@@ -464,6 +467,19 @@ class FastAgent(Workflow):
 
             # Check if complete() was called successfully
             if self.shared_state.finished:
+                if had_tool_failure:
+                    logger.info(
+                        "⏸️ complete() ignored because an earlier tool in the same batch failed",
+                        extra={"color": "yellow"},
+                    )
+                    self.shared_state.finished = False
+                    self.shared_state.success = None
+                    self.shared_state.answer = ""
+                    results_xml = format_tool_results(results)
+                    event = FastAgentOutputEvent(output=results_xml)
+                    ctx.write_event_to_stream(event)
+                    return event
+
                 if self.shared_state.pending_user_messages:
                     logger.info(
                         "⏸️ complete() called but external messages pending, continuing",
