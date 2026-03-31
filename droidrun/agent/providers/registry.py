@@ -10,7 +10,6 @@ from droidrun.agent.providers.types import (
 OPENAI_OAUTH_MODELS = (
     ModelSpec("gpt-5.4"),
     ModelSpec("gpt-5.3-codex"),
-    ModelSpec("gpt-5.3-codex-spark"),
     ModelSpec("gpt-5.2-codex"),
     ModelSpec("gpt-5.1-codex"),
 )
@@ -87,6 +86,7 @@ PROVIDER_FAMILIES: tuple[ProviderFamilySpec, ...] = (
                     ModelSpec("claude-sonnet-4-6"),
                     ModelSpec("claude-opus-4-6"),
                     ModelSpec("claude-opus-4-5"),
+                    ModelSpec("claude-haiku-4-5"),
                 ),
                 requires_api_key=True,
             ),
@@ -99,6 +99,7 @@ PROVIDER_FAMILIES: tuple[ProviderFamilySpec, ...] = (
                     ModelSpec("claude-sonnet-4-6"),
                     ModelSpec("claude-opus-4-6"),
                     ModelSpec("claude-opus-4-5"),
+                    ModelSpec("claude-haiku-4-5"),
                 ),
                 credential_path="~/.claude/.credentials.json",
             ),

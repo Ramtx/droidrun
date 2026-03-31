@@ -75,10 +75,11 @@ def text_prompt(
     secret: bool = False,
 ) -> str:
     inquirer = _import_inquirer_select()
+    normalized_default = default if default is not None else ""
     if inquirer is not None:
         prompt = inquirer.secret if secret else inquirer.text
-        return str(prompt(message=message, default=default).execute()).strip()
-    return click.prompt(message, default=default or "", hide_input=secret).strip()
+        return str(prompt(message=message, default=normalized_default).execute()).strip()
+    return click.prompt(message, default=normalized_default, hide_input=secret).strip()
 
 
 def normalize_role_targets(

@@ -16,7 +16,6 @@ def test_openai_oauth_model_catalog_is_restricted() -> None:
     assert model_ids == [
         "gpt-5.4",
         "gpt-5.3-codex",
-        "gpt-5.3-codex-spark",
         "gpt-5.2-codex",
         "gpt-5.1-codex",
     ]
