@@ -384,7 +384,7 @@ class AnthropicOAuthLLM(CustomLLM):
         done = threading.Event()
 
         code_verifier, code_challenge = _pkce_pair()
-        state = _b64_no_pad(secrets.token_bytes(16))
+        state = _b64_no_pad(secrets.token_bytes(32))
         original_authorize_url = self.authorize_url
 
         if "/cai/oauth/authorize" not in self.authorize_url:
@@ -464,7 +464,7 @@ class AnthropicOAuthLLM(CustomLLM):
         input_fn: Any = input,
     ) -> str:
         code_verifier, code_challenge = _pkce_pair()
-        state = _b64_no_pad(secrets.token_bytes(16))
+        state = _b64_no_pad(secrets.token_bytes(32))
         redirect_uri = "https://platform.claude.com/oauth/code/callback"
         original_authorize_url = self.authorize_url
 

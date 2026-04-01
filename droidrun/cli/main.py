@@ -408,8 +408,6 @@ def _run_anthropic_oauth_login(
             official_cli = False
             manual = True
             open_browser = False
-            authorize_url = "https://platform.claude.com/oauth/authorize"
-            login_scope = "org:create_api_key user:profile"
         else:
             if manual:
                 raise click.ClickException("--manual is only supported with --custom-oauth.")

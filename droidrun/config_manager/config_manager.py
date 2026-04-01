@@ -5,8 +5,15 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
+from droidrun.config_manager.env_keys import load_env_keys
 from droidrun.config_manager.path_resolver import PathResolver
 from droidrun.mcp.config import MCPConfig, MCPServerConfig
+
+PROVIDER_ENV_KEY_SLOT: Dict[str, str] = {
+    "GoogleGenAI": "google",
+    "OpenAI": "openai",
+    "Anthropic": "anthropic",
+}
 
 
 # ---------- Config Schema ----------
@@ -39,6 +46,11 @@ class LLMProfile:
             result["credential_path"] = self.credential_path
         # Merge additional kwargs
         result.update(self.kwargs)
+        env_slot = PROVIDER_ENV_KEY_SLOT.get(self.provider)
+        if env_slot and "api_key" not in result:
+            api_key = load_env_keys().get(env_slot, "")
+            if api_key:
+                result["api_key"] = api_key
         return result
 
 
