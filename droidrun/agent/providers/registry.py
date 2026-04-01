@@ -10,8 +10,6 @@ from droidrun.agent.providers.types import (
 OPENAI_OAUTH_MODELS = (
     ModelSpec("gpt-5.4"),
     ModelSpec("gpt-5.3-codex"),
-    ModelSpec("gpt-5.2-codex"),
-    ModelSpec("gpt-5.1-codex"),
 )
 
 
@@ -24,11 +22,11 @@ PROVIDER_FAMILIES: tuple[ProviderFamilySpec, ...] = (
                 id="GoogleGenAI",
                 runtime_provider_name="GoogleGenAI",
                 auth_mode="api_key",
-                default_model="gemini-2.5-pro",
+                default_model="gemini-3.1-pro-preview",
                 models=(
-                    ModelSpec("gemini-2.5-flash"),
-                    ModelSpec("gemini-2.5-pro"),
+                    ModelSpec("gemini-3-flash-preview"),
                     ModelSpec("gemini-3.1-pro-preview"),
+                    ModelSpec("gemini-3.1-flash-lite-preview"),
                 ),
                 requires_api_key=True,
             ),
@@ -38,9 +36,9 @@ PROVIDER_FAMILIES: tuple[ProviderFamilySpec, ...] = (
                 auth_mode="oauth",
                 default_model="gemini-3.1-pro-preview",
                 models=(
+                    ModelSpec("gemini-3-flash-preview"),
                     ModelSpec("gemini-3.1-pro-preview"),
-                    ModelSpec("gemini-2.5-flash"),
-                    ModelSpec("gemini-2.5-flash-lite"),
+                    ModelSpec("gemini-3.1-flash-lite-preview"),
                 ),
                 credential_path="~/.gemini/oauth_creds.json",
             ),
@@ -57,8 +55,8 @@ PROVIDER_FAMILIES: tuple[ProviderFamilySpec, ...] = (
                 default_model="gpt-5.4",
                 models=(
                     ModelSpec("gpt-5.4"),
-                    ModelSpec("gpt-4.1"),
-                    ModelSpec("gpt-4o"),
+                    ModelSpec("gpt-5-mini"),
+                    ModelSpec("gpt-5-nano"),
                 ),
                 requires_api_key=True,
             ),
@@ -85,7 +83,6 @@ PROVIDER_FAMILIES: tuple[ProviderFamilySpec, ...] = (
                 models=(
                     ModelSpec("claude-sonnet-4-6"),
                     ModelSpec("claude-opus-4-6"),
-                    ModelSpec("claude-opus-4-5"),
                     ModelSpec("claude-haiku-4-5"),
                 ),
                 requires_api_key=True,
@@ -98,7 +95,6 @@ PROVIDER_FAMILIES: tuple[ProviderFamilySpec, ...] = (
                 models=(
                     ModelSpec("claude-sonnet-4-6"),
                     ModelSpec("claude-opus-4-6"),
-                    ModelSpec("claude-opus-4-5"),
                     ModelSpec("claude-haiku-4-5"),
                 ),
                 credential_path="~/.claude/.credentials.json",
@@ -149,7 +145,6 @@ PROVIDER_FAMILIES: tuple[ProviderFamilySpec, ...] = (
                 default_model="MiniMax-M2.7",
                 models=(
                     ModelSpec("MiniMax-M2.7"),
-                    ModelSpec("MiniMax-M2.5"),
                     ModelSpec("MiniMax-M2.5-highspeed"),
                 ),
                 requires_api_key=True,
@@ -169,15 +164,29 @@ PROVIDER_FAMILIES: tuple[ProviderFamilySpec, ...] = (
                 models=(
                     ModelSpec("glm-5"),
                     ModelSpec("glm-4.7"),
-                    ModelSpec("glm-4.7-flash"),
                 ),
                 requires_api_key=True,
                 requires_base_url=True,
                 base_url="https://api.z.ai/api/paas/v4",
             ),
+            ProviderVariantSpec(
+                id="ZAI_Coding",
+                runtime_provider_name="ZAI",
+                runtime_transport_provider_name="OpenAILike",
+                auth_mode="coding_api",
+                default_model="glm-5",
+                models=(
+                    ModelSpec("glm-5"),
+                    ModelSpec("glm-4.7"),
+                ),
+                requires_api_key=True,
+                requires_base_url=True,
+                base_url="https://api.z.ai/api/coding/paas/v4",
+            ),
         ),
         notes=(
             "ZAI is exposed as a first-class provider family while reusing the OpenAI-compatible transport.",
+            "Use auth mode `coding_api` for the GLM Coding Plan endpoint.",
         ),
     ),
 )
@@ -219,3 +228,34 @@ def list_models_for_variant(
     family_id: str, auth_mode: str | None = None
 ) -> tuple[ModelSpec, ...]:
     return resolve_provider_variant(family_id, auth_mode).models
+
+
+def normalize_model_id_for_variant(
+    family_id: str, auth_mode: str | None, model_id: str
+) -> str:
+    """Normalize accepted model aliases to the canonical model id for a variant."""
+    variant = resolve_provider_variant(family_id, auth_mode)
+    allowed_model_ids = {model.id for model in variant.models}
+    if model_id in allowed_model_ids:
+        return model_id
+
+    alias_prefixes: tuple[str, ...] = ()
+    if family_id == "openai" and auth_mode == "api_key":
+        alias_prefixes = ("openai/",)
+    elif family_id == "openai" and auth_mode == "oauth":
+        alias_prefixes = ("openai-codex/", "openai/")
+
+    for prefix in alias_prefixes:
+        if model_id.startswith(prefix):
+            normalized = model_id[len(prefix) :]
+            if normalized in allowed_model_ids:
+                return normalized
+
+    if family_id == "openai" and auth_mode == "api_key" and "/" not in model_id:
+        if model_id in allowed_model_ids:
+            return model_id
+    if family_id == "openai" and auth_mode == "oauth" and "/" not in model_id:
+        if model_id in allowed_model_ids:
+            return model_id
+
+    return model_id

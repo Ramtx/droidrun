@@ -4,6 +4,7 @@ from droidrun.agent.providers import (
     list_models_for_variant,
     resolve_provider_variant,
 )
+from droidrun.config_manager import config_manager
 from droidrun.config_manager.config_manager import LLMProfile
 
 
@@ -16,8 +17,6 @@ def test_openai_oauth_model_catalog_is_restricted() -> None:
     assert model_ids == [
         "gpt-5.4",
         "gpt-5.3-codex",
-        "gpt-5.2-codex",
-        "gpt-5.1-codex",
     ]
 
 
@@ -27,6 +26,17 @@ def test_zai_is_first_class_but_uses_openai_like_transport() -> None:
     assert variant.runtime_provider_name == "ZAI"
     assert variant.runtime_transport_provider_name == "OpenAILike"
     assert variant.base_url == "https://api.z.ai/api/paas/v4"
+
+
+def test_zai_exposes_dedicated_coding_api_variant() -> None:
+    assert list_auth_modes("zai") == ("api_key", "coding_api")
+
+    variant = resolve_provider_variant("zai", "coding_api")
+
+    assert variant.id == "ZAI_Coding"
+    assert variant.runtime_provider_name == "ZAI"
+    assert variant.runtime_transport_provider_name == "OpenAILike"
+    assert variant.base_url == "https://api.z.ai/api/coding/paas/v4"
 
 
 def test_minimax_stays_first_class() -> None:
@@ -52,3 +62,16 @@ def test_llm_profile_framework_metadata_is_backward_compatible() -> None:
     kwargs = profile.to_load_llm_kwargs()
     assert kwargs["model"] == "gpt-5.4"
     assert "credential_path" not in kwargs
+
+
+def test_llm_profile_injects_env_api_key_for_google_genai(monkeypatch) -> None:
+    monkeypatch.setattr(
+        config_manager,
+        "load_env_keys",
+        lambda: {"google": "test-google-key", "openai": "", "anthropic": ""},
+    )
+    profile = LLMProfile(provider="GoogleGenAI", model="gemini-2.5-flash")
+
+    kwargs = profile.to_load_llm_kwargs()
+
+    assert kwargs["api_key"] == "test-google-key"
