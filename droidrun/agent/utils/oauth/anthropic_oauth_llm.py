@@ -26,6 +26,7 @@ from llama_index.core.callbacks import CallbackManager
 from llama_index.core.constants import DEFAULT_TEMPERATURE
 from llama_index.core.llms.callbacks import llm_chat_callback, llm_completion_callback
 from llama_index.core.llms.custom import CustomLLM
+from droidrun.config_manager.credential_paths import ANTHROPIC_OAUTH_CREDENTIAL_PATH
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 DEFAULT_API_BASE = "https://api.anthropic.com"
@@ -33,7 +34,7 @@ DEFAULT_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 DEFAULT_AUTHORIZE_URL = "https://platform.claude.com/oauth/authorize"
 DEFAULT_MODERN_AUTHORIZE_URL = "https://claude.com/cai/oauth/authorize"
 DEFAULT_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-DEFAULT_CREDENTIAL_PATH = "~/.claude/.credentials.json"
+DEFAULT_CREDENTIAL_PATH = str(ANTHROPIC_OAUTH_CREDENTIAL_PATH)
 DEFAULT_LOGIN_SCOPE = "org:create_api_key user:profile"
 DEFAULT_MODERN_LOGIN_SCOPE = (
     "org:create_api_key user:profile user:inference "
@@ -384,7 +385,7 @@ class AnthropicOAuthLLM(CustomLLM):
         done = threading.Event()
 
         code_verifier, code_challenge = _pkce_pair()
-        state = _b64_no_pad(secrets.token_bytes(16))
+        state = _b64_no_pad(secrets.token_bytes(32))
         original_authorize_url = self.authorize_url
 
         if "/cai/oauth/authorize" not in self.authorize_url:
@@ -464,12 +465,12 @@ class AnthropicOAuthLLM(CustomLLM):
         input_fn: Any = input,
     ) -> str:
         code_verifier, code_challenge = _pkce_pair()
-        state = _b64_no_pad(secrets.token_bytes(16))
+        state = _b64_no_pad(secrets.token_bytes(32))
         redirect_uri = "https://platform.claude.com/oauth/code/callback"
         original_authorize_url = self.authorize_url
 
-        if "/cai/oauth/authorize" in self.authorize_url:
-            self.authorize_url = DEFAULT_AUTHORIZE_URL
+        if "/cai/oauth/authorize" not in self.authorize_url:
+            self.authorize_url = DEFAULT_MODERN_AUTHORIZE_URL
 
         auth_url = self._build_auth_url(
             redirect_uri=redirect_uri,

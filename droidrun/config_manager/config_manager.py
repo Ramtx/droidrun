@@ -5,8 +5,15 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
+from droidrun.config_manager.env_keys import load_env_keys
 from droidrun.config_manager.path_resolver import PathResolver
 from droidrun.mcp.config import MCPConfig, MCPServerConfig
+
+PROVIDER_ENV_KEY_SLOT: Dict[str, str] = {
+    "GoogleGenAI": "google",
+    "OpenAI": "openai",
+    "Anthropic": "anthropic",
+}
 
 
 # ---------- Config Schema ----------
@@ -19,6 +26,9 @@ class LLMProfile:
     temperature: float = 0.2
     base_url: Optional[str] = None
     api_base: Optional[str] = None
+    provider_family: Optional[str] = None
+    auth_mode: Optional[str] = None
+    credential_path: Optional[str] = None
     kwargs: Dict[str, Any] = field(default_factory=dict)
 
     def to_load_llm_kwargs(self) -> Dict[str, Any]:
@@ -32,8 +42,15 @@ class LLMProfile:
             result["base_url"] = self.base_url
         if self.api_base:
             result["api_base"] = self.api_base
+        if self.credential_path:
+            result["credential_path"] = self.credential_path
         # Merge additional kwargs
         result.update(self.kwargs)
+        env_slot = PROVIDER_ENV_KEY_SLOT.get(self.provider)
+        if env_slot and "api_key" not in result:
+            api_key = load_env_keys().get(env_slot, "")
+            if api_key:
+                result["api_key"] = api_key
         return result
 
 

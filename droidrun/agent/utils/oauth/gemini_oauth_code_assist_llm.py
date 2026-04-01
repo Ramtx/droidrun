@@ -25,6 +25,7 @@ from llama_index.core.callbacks import CallbackManager
 from llama_index.core.constants import DEFAULT_TEMPERATURE
 from llama_index.core.llms.callbacks import llm_chat_callback, llm_completion_callback
 from llama_index.core.llms.custom import CustomLLM
+from droidrun.config_manager.credential_paths import GEMINI_OAUTH_CREDENTIAL_PATH
 
 DEFAULT_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_CODE_ASSIST_ENDPOINT = "https://cloudcode-pa.googleapis.com"
@@ -33,7 +34,7 @@ DEFAULT_CODE_ASSIST_LOAD_METHOD = "loadCodeAssist"
 DEFAULT_CODE_ASSIST_ONBOARD_METHOD = "onboardUser"
 DEFAULT_TOKEN_URL = "https://oauth2.googleapis.com/token"
 DEFAULT_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-DEFAULT_CREDENTIAL_PATH = "~/.gemini/oauth_creds.json"
+DEFAULT_CREDENTIAL_PATH = str(GEMINI_OAUTH_CREDENTIAL_PATH)
 
 # Same installed-app OAuth client used by gemini-cli.
 DEFAULT_CLIENT_ID = (
@@ -50,7 +51,7 @@ class GeminiOAuthCodeAssistLLM(CustomLLM):
     - `refresh_token`
     - `credential_path` file containing cached OAuth credentials.
 
-    Cached credentials are compatible with gemini-cli's `~/.gemini/oauth_creds.json` format.
+    Cached credentials are stored in droidrun's config dir.
     """
 
     MODEL_PRESETS: ClassVar[Dict[str, str]] = {

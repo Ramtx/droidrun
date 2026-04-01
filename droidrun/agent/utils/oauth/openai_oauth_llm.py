@@ -8,7 +8,7 @@ Usage:
         custom_model="gpt-5.4",  # optional override
         oauth_refresh_token="rt_...",
         oauth_access_token="eyJ...",  # optional if cached file already exists
-        oauth_credential_path="~/.openai/oauth_creds.json",
+        oauth_credential_path=str(OPENAI_OAUTH_CREDENTIAL_PATH),
     )
 """
 
@@ -33,10 +33,11 @@ from llama_index.core.base.llms.types import ChatMessage, ChatResponse, LLMMetad
 from llama_index.llms.openai import OpenAI
 from llama_index.llms.openai.base import llm_retry_decorator
 from llama_index.llms.openai.utils import to_openai_message_dicts
+from droidrun.config_manager.credential_paths import OPENAI_OAUTH_CREDENTIAL_PATH
 
 DEFAULT_OPENAI_OAUTH_ISSUER = "https://auth.openai.com"
 DEFAULT_OPENAI_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
-DEFAULT_OPENAI_OAUTH_CREDENTIAL_PATH = Path("~/.openai/oauth_creds.json").expanduser()
+DEFAULT_OPENAI_OAUTH_CREDENTIAL_PATH = OPENAI_OAUTH_CREDENTIAL_PATH
 DEFAULT_AUTH_MODEL = "openai-codex/gpt-5.4"
 DEFAULT_OPENAI_API_BASE = "https://api.openai.com/v1"
 DEFAULT_CODEX_API_BASE = "https://chatgpt.com/backend-api/codex"
