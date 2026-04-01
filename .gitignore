@@ -34,6 +34,8 @@ credentials.yaml
 .*/
 !.gitignore
 !.github/
+/.codex/
+/.codex
 
 backend/
 frontend/
