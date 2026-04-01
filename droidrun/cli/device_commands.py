@@ -17,7 +17,11 @@ from rich.console import Console
 from droidrun.config_manager import ConfigLoader
 from droidrun.portal import ensure_portal_ready
 from droidrun.tools.driver.android import AndroidDriver
-from droidrun.tools.driver.ios import IOSDriver
+from droidrun.tools.driver.ios import (
+    IOSDriver,
+    discover_ios_portal,
+    validate_ios_portal_url,
+)
 from droidrun.tools.filters import ConciseFilter
 from droidrun.tools.formatters import IndexedFormatter
 from droidrun.tools.ui.ios_provider import IOSStateProvider
@@ -42,12 +46,8 @@ def device_options(f):
     f = click.option(
         "--config", "-c", "config_path", help="Path to config file", default=None
     )(f)
-    f = click.option(
-        "--tcp/--no-tcp", default=None, help="Use TCP communication"
-    )(f)
-    f = click.option(
-        "--ios", is_flag=True, default=False, help="Target iOS device"
-    )(f)
+    f = click.option("--tcp/--no-tcp", default=None, help="Use TCP communication")(f)
+    f = click.option("--ios", is_flag=True, default=False, help="Target iOS device")(f)
     return f
 
 
@@ -70,9 +70,11 @@ async def _create_driver(
     is_ios = config.device.platform.lower() == "ios"
 
     if is_ios:
-        if not config.device.serial:
-            raise click.ClickException("iOS device URL required (--device)")
-        driver = IOSDriver(url=config.device.serial)
+        if config.device.serial:
+            url = validate_ios_portal_url(config.device.serial)
+        else:
+            url = await discover_ios_portal()
+        driver = IOSDriver(url=url)
         await driver.connect()
         return driver, True
 
@@ -180,7 +182,9 @@ async def tap(x, y, device, config_path, tcp, ios):
 @click.argument("y1", type=int)
 @click.argument("x2", type=int)
 @click.argument("y2", type=int)
-@click.option("--duration", type=float, default=1.0, show_default=True, help="Duration in seconds")
+@click.option(
+    "--duration", type=float, default=1.0, show_default=True, help="Duration in seconds"
+)
 @device_options
 @coro
 async def swipe_cmd(x1, y1, x2, y2, duration, device, config_path, tcp, ios):
@@ -229,7 +233,9 @@ async def type_text(text, clear, device, config_path, tcp, ios):
 
 
 @device_cli.command()
-@click.argument("button", type=click.Choice(["back", "home", "enter"], case_sensitive=False))
+@click.argument(
+    "button", type=click.Choice(["back", "home", "enter"], case_sensitive=False)
+)
 @device_options
 @coro
 async def press(button, device, config_path, tcp, ios):
@@ -243,9 +249,7 @@ async def press(button, device, config_path, tcp, ios):
 
 
 @device_cli.command()
-@click.option(
-    "--system/--no-system", default=False, help="Include system apps"
-)
+@click.option("--system/--no-system", default=False, help="Include system apps")
 @device_options
 @coro
 async def apps(system, device, config_path, tcp, ios):

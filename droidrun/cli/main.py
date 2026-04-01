@@ -52,6 +52,7 @@ from droidrun.agent.utils.oauth.openai_oauth_llm import (
     OpenAIOAuth,
 )
 from droidrun.telemetry import print_telemetry_message
+from droidrun.tools.driver.ios import discover_ios_portal, validate_ios_portal_url
 
 # Suppress all warnings
 warnings.filterwarnings("ignore")
@@ -185,6 +186,11 @@ async def run_command(
         # Platform overrides
         if ios:
             config.device.platform = "ios"
+            if config.device.serial:
+                config.device.serial = validate_ios_portal_url(config.device.serial)
+            else:
+                logger.info("🔍 Searching for iOS portal...")
+                config.device.serial = await discover_ios_portal()
 
         # ================================================================
         # STEP 2: Initialize DroidAgent with config
@@ -256,7 +262,8 @@ async def run_command(
             return False
 
         except Exception as e:
-            logger.error(f"💥 Error: {e}")
+            err_desc = str(e) or type(e).__name__
+            logger.error(f"💥 Error: {err_desc}")
             if config.logging.debug:
                 import traceback
 
@@ -264,7 +271,8 @@ async def run_command(
             return False
 
     except Exception as e:
-        logger.error(f"💥 Setup error: {e}")
+        err_desc = str(e) or type(e).__name__
+        logger.error(f"💥 Setup error: {err_desc}")
         if debug_mode:
             import traceback
 
@@ -390,7 +398,11 @@ except Exception:
     "-a",
     type=click.Choice(_available_agents) if _available_agents else None,
     help="External agent to use"
-    + (f" [{', '.join(_available_agents)}]" if _available_agents else " (none available)"),
+    + (
+        f" [{', '.join(_available_agents)}]"
+        if _available_agents
+        else " (none available)"
+    ),
     default=None,
 )
 @click.option(
@@ -446,7 +458,7 @@ except Exception:
     help="Trajectory saving level: none (no saving), step (save per step), action (save per action)",
     default=None,
 )
-@click.option("--ios", type=bool, default=None, help="Run on iOS device")
+@click.option("--ios", is_flag=True, default=False, help="Run on iOS device")
 @coro
 async def run(
     command: str,
@@ -466,7 +478,7 @@ async def run(
     debug: bool | None,
     tcp: bool | None,
     save_trajectory: str | None,
-    ios: bool | None,
+    ios: bool,
 ):
     """Run a command on your Android device using natural language."""
 
@@ -489,13 +501,13 @@ async def run(
             tcp=tcp,
             temperature=temperature,
             save_trajectory=save_trajectory,
-            ios=ios if ios is not None else False,
+            ios=ios,
         )
     finally:
         # Disable Droidrun keyboard after execution
         # Note: Port forwards are managed automatically and persist until device disconnect
         try:
-            if not (ios if ios is not None else False):
+            if not ios:
                 device_obj = await adb.device(device)
                 if device_obj:
                     await device_obj.shell(

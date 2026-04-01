@@ -21,8 +21,11 @@ class DeviceDriver:
     Every method raises ``NotImplementedError`` by default.
     Concrete drivers override the methods they support and declare them
     in the ``supported`` class-level set.
+
+    ``platform`` identifies the device type (e.g. "Android", "iOS").
     """
 
+    platform: str = "Android"
     supported: set[str] = set()
     supported_buttons: set[str] = set()
 
@@ -54,7 +57,11 @@ class DeviceDriver:
         raise NotImplementedError
 
     async def input_text(
-        self, text: str, clear: bool = False, stealth: bool = False, wpm: int = 0,
+        self,
+        text: str,
+        clear: bool = False,
+        stealth: bool = False,
+        wpm: int = 0,
     ) -> bool:
         """Type *text* into the currently focused field.
 
