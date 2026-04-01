@@ -41,3 +41,11 @@ frontend/
 reddit_python_posts.json
 
 test/
+scripts/smoke_test_api_models.py
+scripts/smoke_test_oauth_models.py
+scripts/test_anthropic_oauth_method1_official_cli.py
+scripts/test_anthropic_oauth_method2_callback.py
+scripts/test_anthropic_oauth_method3_manual_code.py
+scripts/_anthropic_oauth_single_model.py
+scripts/test_*.py
+scripts/smoke_test_*.py
