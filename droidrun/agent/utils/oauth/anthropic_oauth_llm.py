@@ -40,6 +40,7 @@ DEFAULT_MODERN_LOGIN_SCOPE = (
     "org:create_api_key user:profile user:inference "
     "user:sessions:claude_code user:mcp_servers user:file_upload"
 )
+DEFAULT_SETUP_TOKEN_SCOPE = "user:inference"
 DEFAULT_REFRESH_SCOPE = (
     "user:inference user:profile user:file_upload user:mcp_servers user:sessions:claude_code"
 )
@@ -314,18 +315,23 @@ class AnthropicOAuthLLM(CustomLLM):
         redirect_uri: str,
         code_verifier: str,
         state: str,
+        expires_in: Optional[int] = None,
     ) -> str:
+        request_body: Dict[str, Any] = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": self.client_id,
+            "code_verifier": code_verifier,
+            "state": state,
+        }
+        if expires_in is not None:
+            request_body["expires_in"] = expires_in
+
         res = self._session.post(
             self.token_url,
             headers=self._token_headers(),
-            json={
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": redirect_uri,
-                "client_id": self.client_id,
-                "code_verifier": code_verifier,
-                "state": state,
-            },
+            json=request_body,
             timeout=self.timeout,
         )
         res.raise_for_status()
@@ -380,6 +386,7 @@ class AnthropicOAuthLLM(CustomLLM):
         callback_host: str = "127.0.0.1",
         callback_port: int = 0,
         callback_path: str = "/callback",
+        expires_in: Optional[int] = None,
     ) -> str:
         result: Dict[str, Optional[str]] = {"code": None, "state": None, "error": None}
         done = threading.Event()
@@ -452,6 +459,7 @@ class AnthropicOAuthLLM(CustomLLM):
                 redirect_uri=redirect_uri,
                 code_verifier=code_verifier,
                 state=state,
+                expires_in=expires_in,
             )
         finally:
             self.authorize_url = original_authorize_url
@@ -463,6 +471,7 @@ class AnthropicOAuthLLM(CustomLLM):
         *,
         open_browser: bool = True,
         input_fn: Any = input,
+        expires_in: Optional[int] = None,
     ) -> str:
         code_verifier, code_challenge = _pkce_pair()
         state = _b64_no_pad(secrets.token_bytes(32))
@@ -494,6 +503,7 @@ class AnthropicOAuthLLM(CustomLLM):
                 redirect_uri=redirect_uri,
                 code_verifier=code_verifier,
                 state=state,
+                expires_in=expires_in,
             )
         finally:
             self.authorize_url = original_authorize_url

@@ -1,14 +1,13 @@
-"""Persistent API key storage using a .env file in the user config directory."""
+"""Persistent API key storage using a file in the shared credentials directory."""
 
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
-import platformdirs
 from dotenv import dotenv_values, set_key
+from droidrun.config_manager.credential_paths import API_KEY_ENV_FILE
 
-ENV_FILE = Path(platformdirs.user_config_dir("droidrun")) / ".env"
+ENV_FILE = API_KEY_ENV_FILE
 
 API_KEY_ENV_VARS = {
     "google": "GOOGLE_API_KEY",
@@ -19,7 +18,7 @@ API_KEY_ENV_VARS = {
 
 
 def load_env_keys() -> dict[str, str]:
-    """Load API keys. The .env file takes precedence over shell env vars.
+    """Load API keys. The credentials env file takes precedence over shell env vars.
 
     Returns:
         Dict mapping slot name (e.g. "google") to key value.
@@ -36,7 +35,7 @@ def load_env_keys() -> dict[str, str]:
 
 
 def save_env_keys(keys: dict[str, str]) -> None:
-    """Persist API keys to the .env file and set them as env vars.
+    """Persist API keys to the shared credentials env file and set them as env vars.
 
     Args:
         keys: Dict mapping slot name (e.g. "google") to key value.
