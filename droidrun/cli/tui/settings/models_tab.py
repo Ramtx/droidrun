@@ -16,20 +16,24 @@ from droidrun.cli.oauth_actions import (
 )
 from droidrun.cli.tui.settings.data import (
     AGENT_ROLES,
-    PROVIDERS,
     ProfileSettings,
     SettingsData,
+    provider_auth_mode,
+    provider_auth_mode_options,
     provider_fields,
-    provider_label,
+    provider_family_id,
+    provider_family_options,
     provider_credential_path,
+    provider_label,
     provider_models,
     provider_oauth_command,
     provider_oauth_status,
+    resolve_variant_id,
 )
 from droidrun.cli.tui.settings.section import Section
 
 
-PROVIDER_OPTIONS = [(provider_label(p), p) for p in PROVIDERS]
+FAMILY_OPTIONS = provider_family_options()
 
 
 class _KwargsRow(HorizontalGroup):
@@ -108,10 +112,58 @@ class _ProfileCard(Section):
         self._role = role
         self._profile = profile
 
+    def _refresh_provider_dependent_fields(self, provider: str) -> None:
+        pf = provider_fields(provider)
+
+        api_row = self.query_one(f"#row-apikey-{self._role}")
+        url_row = self.query_one(f"#row-baseurl-{self._role}")
+        oauth_row = self.query_one(f"#row-oauth-{self._role}")
+        oauth_status = self.query_one(f"#oauth-status-{self._role}", Static)
+        model_select = self.query_one(f"#model-select-{self._role}", Select)
+        model_input = self.query_one(f"#model-input-{self._role}", Input)
+        model_choices = provider_models(provider)
+        current_path = (
+            self._profile.credential_path
+            if provider == self._profile.provider and self._profile.credential_path
+            else provider_credential_path(provider)
+        )
+        oauth_message = provider_oauth_status(provider, current_path)
+
+        if pf.get("api_key"):
+            api_row.remove_class("hidden-field")
+        else:
+            api_row.add_class("hidden-field")
+
+        if pf.get("base_url"):
+            url_row.remove_class("hidden-field")
+        else:
+            url_row.add_class("hidden-field")
+
+        if provider_oauth_command(provider):
+            oauth_row.remove_class("hidden-field")
+            oauth_status.update(oauth_message or "Not configured")
+        else:
+            oauth_row.add_class("hidden-field")
+
+        if model_choices:
+            model_select.set_options([(m, m) for m in model_choices])
+            model_select.value = model_choices[0]
+            model_select.remove_class("hidden-field")
+            model_input.add_class("hidden-field")
+            model_input.value = model_choices[0]
+        else:
+            model_select.add_class("hidden-field")
+            model_input.remove_class("hidden-field")
+            if not model_input.value.strip():
+                model_input.value = ""
+
     def compose(self) -> ComposeResult:
         if self._role == "manager":
             yield Button("Apply to all", id="apply-all-btn")
 
+        family_id = provider_family_id(self._profile.provider)
+        auth_mode = provider_auth_mode(self._profile.provider)
+        auth_options = provider_auth_mode_options(family_id)
         model_options = [(m, m) for m in provider_models(self._profile.provider)]
         has_model_choices = bool(model_options)
         selected_model = (
@@ -125,10 +177,20 @@ class _ProfileCard(Section):
             with HorizontalGroup(classes="field-row"):
                 yield Label("Provider", classes="field-label")
                 yield Select(
-                    PROVIDER_OPTIONS,
-                    value=self._profile.provider,
+                    FAMILY_OPTIONS,
+                    value=family_id,
                     allow_blank=False,
-                    id=f"provider-{self._role}",
+                    id=f"provider-family-{self._role}",
+                    classes="field-select",
+                )
+
+            with HorizontalGroup(classes="field-row"):
+                yield Label("Auth", classes="field-label")
+                yield Select(
+                    auth_options,
+                    value=auth_mode,
+                    allow_blank=False,
+                    id=f"auth-mode-{self._role}",
                     classes="field-select",
                 )
 
@@ -204,55 +266,29 @@ class _ProfileCard(Section):
 
     @on(Select.Changed)
     def _on_provider_changed(self, event: Select.Changed) -> None:
-        if event.select.id != f"provider-{self._role}":
+        if event.select.id == f"provider-family-{self._role}":
+            family_id = str(event.value)
+            auth_select = self.query_one(f"#auth-mode-{self._role}", Select)
+            auth_options = provider_auth_mode_options(family_id)
+            current_auth = str(auth_select.value) if auth_select.value is not None else ""
+            auth_values = [value for _, value in auth_options]
+            auth_select.set_options(auth_options)
+            if current_auth in auth_values:
+                auth_select.value = current_auth
+                provider = resolve_variant_id(family_id, current_auth)
+                self._refresh_provider_dependent_fields(provider)
+            else:
+                auth_select.value = auth_values[0]
             return
-        provider = str(event.value)
-        pf = provider_fields(provider)
-
-        api_row = self.query_one(f"#row-apikey-{self._role}")
-        url_row = self.query_one(f"#row-baseurl-{self._role}")
-        oauth_row = self.query_one(f"#row-oauth-{self._role}")
-        oauth_status = self.query_one(f"#oauth-status-{self._role}", Static)
-        model_select = self.query_one(f"#model-select-{self._role}", Select)
-        model_input = self.query_one(f"#model-input-{self._role}", Input)
-        model_choices = provider_models(provider)
-        current_path = (
-            self._profile.credential_path
-            if provider == self._profile.provider and self._profile.credential_path
-            else provider_credential_path(provider)
-        )
-        oauth_message = provider_oauth_status(provider, current_path)
-
-        if pf.get("api_key"):
-            api_row.remove_class("hidden-field")
-        else:
-            api_row.add_class("hidden-field")
-
-        if pf.get("base_url"):
-            url_row.remove_class("hidden-field")
-        else:
-            url_row.add_class("hidden-field")
-
-        if provider_oauth_command(provider):
-            oauth_row.remove_class("hidden-field")
-            oauth_status.update(oauth_message or "Not configured")
-        else:
-            oauth_row.add_class("hidden-field")
-
-        if model_choices:
-            model_select.set_options([(m, m) for m in model_choices])
-            model_select.value = model_choices[0]
-            model_select.remove_class("hidden-field")
-            model_input.add_class("hidden-field")
-            model_input.value = model_choices[0]
-        else:
-            model_select.add_class("hidden-field")
-            model_input.remove_class("hidden-field")
-            if not model_input.value.strip():
-                model_input.value = ""
+        if event.select.id == f"auth-mode-{self._role}":
+            family_id = str(self.query_one(f"#provider-family-{self._role}", Select).value)
+            provider = resolve_variant_id(family_id, str(event.value))
+            self._refresh_provider_dependent_fields(provider)
 
     def collect(self) -> ProfileSettings:
-        provider = str(self.query_one(f"#provider-{self._role}", Select).value)
+        family_id = str(self.query_one(f"#provider-family-{self._role}", Select).value)
+        auth_mode = str(self.query_one(f"#auth-mode-{self._role}", Select).value)
+        provider = resolve_variant_id(family_id, auth_mode)
         model_choices = provider_models(provider)
         if model_choices:
             model = str(self.query_one(f"#model-select-{self._role}", Select).value)
@@ -305,7 +341,9 @@ class ModelsTab(VerticalGroup):
             event.stop()
             role = event.button.id.removeprefix("oauth-login-")
             card = next(card for card in self.query(_ProfileCard) if card._role == role)
-            provider = str(card.query_one(f"#provider-{role}", Select).value)
+            family_id = str(card.query_one(f"#provider-family-{role}", Select).value)
+            auth_mode = str(card.query_one(f"#auth-mode-{role}", Select).value)
+            provider = resolve_variant_id(family_id, auth_mode)
             credential_path = provider_credential_path(provider)
             model_choices = provider_models(provider)
             if model_choices:
@@ -370,7 +408,12 @@ class ModelsTab(VerticalGroup):
             return
         source = cards[0].collect()
         for card in cards[1:]:
-            card.query_one(f"#provider-{card._role}", Select).value = source.provider
+            source_family = provider_family_id(source.provider)
+            source_auth = provider_auth_mode(source.provider)
+            card.query_one(f"#provider-family-{card._role}", Select).value = source_family
+            auth_select = card.query_one(f"#auth-mode-{card._role}", Select)
+            auth_select.set_options(provider_auth_mode_options(source_family))
+            auth_select.value = source_auth
             card.query_one(f"#apikey-{card._role}", Input).value = source.api_key
             card.query_one(f"#baseurl-{card._role}", Input).value = source.base_url
             card.query_one(f"#temp-{card._role}", Input).value = str(source.temperature)

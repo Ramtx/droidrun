@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 
 import click
@@ -204,6 +205,25 @@ def _prompt_api_key_for_variant(variant: Any) -> str:
         )
         return entered or existing
     return text_prompt("API key", secret=True)
+
+
+def _prompt_oauth_credential_action(credential_path: str) -> str:
+    return _select_with_back(
+        "OAuth credentials found",
+        [
+            SelectChoice(
+                value="use_existing",
+                label="Use existing login",
+                hint=f"Keep credentials from {Path(credential_path).expanduser()}",
+            ),
+            SelectChoice(
+                value="login_again",
+                label="Log in again",
+                hint="Authenticate with another account or refresh credentials",
+            ),
+        ],
+        default="use_existing",
+    )
 
 
 def _target_role_label(target_roles: tuple[str, ...]) -> str:
@@ -497,6 +517,20 @@ def run_configure_wizard(
             state.selected_base_url = text_prompt(
                 "Base URL", default=variant.base_url or "", secret=False
             )
+        if (
+            credential_path
+            and variant.auth_mode == "oauth"
+            and state.prepared_auth_variant_id != variant.id
+            and Path(credential_path).expanduser().exists()
+        ):
+            oauth_action = _prompt_oauth_credential_action(credential_path)
+            if oauth_action == _BACK:
+                if model_is_fixed:
+                    break
+                state.selected_model = None
+                break
+            if oauth_action == "use_existing":
+                state.prepared_auth_variant_id = variant.id
         while True:
             action = _select_with_back(
                 "Configuration complete",

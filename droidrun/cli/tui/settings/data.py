@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -88,6 +89,37 @@ def provider_fields(variant_id: str) -> dict[str, bool]:
 
 def provider_label(variant_id: str) -> str:
     return PROVIDER_CHOICES[variant_id].label
+
+
+def provider_family_id(variant_id: str) -> str:
+    return PROVIDER_CHOICES[variant_id].family_id
+
+
+def provider_auth_mode(variant_id: str) -> str:
+    return PROVIDER_CHOICES[variant_id].auth_mode
+
+
+def provider_family_label(family_id: str) -> str:
+    for family in list_provider_families():
+        if family.id == family_id:
+            return family.display_name
+    return family_id
+
+
+def provider_family_options() -> list[tuple[str, str]]:
+    return [(family.display_name, family.id) for family in list_provider_families()]
+
+
+def provider_auth_mode_options(family_id: str) -> list[tuple[str, str]]:
+    family = next(f for f in list_provider_families() if f.id == family_id)
+    return [
+        (variant.auth_mode.replace("_", " "), variant.auth_mode)
+        for variant in family.variants
+    ]
+
+
+def resolve_variant_id(family_id: str, auth_mode: str) -> str:
+    return resolve_provider_variant(family_id, auth_mode).id
 
 
 def provider_models(variant_id: str) -> tuple[str, ...]:
