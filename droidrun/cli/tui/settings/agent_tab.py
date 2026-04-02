@@ -1,4 +1,4 @@
-"""Agent tab — reasoning, grouped vision, max steps, prompts."""
+"""Agent tab — vision, max steps, per-agent prompt paths."""
 
 from __future__ import annotations
 
@@ -18,30 +18,21 @@ class AgentTab(VerticalGroup):
         self.settings = settings
 
     def compose(self) -> ComposeResult:
-        with Section("Mode"):
-            with HorizontalGroup(classes="field-row"):
-                yield Label("Reasoning", classes="field-label")
-                yield BoolToggle(value=self.settings.reasoning, id="reasoning-mode")
-
-            with HorizontalGroup(classes="field-row"):
-                yield Label("Manager Stateless", classes="field-label")
-                yield BoolToggle(
-                    value=self.settings.manager_stateless,
-                    id="manager-stateless",
-                )
-
         with Section("Vision", hint="send screenshots to the LLM"):
             with HorizontalGroup(classes="field-row"):
-                yield Label("Planning Mode", classes="field-label")
+                yield Label("Manager", classes="field-label")
                 yield BoolToggle(
-                    value=(
-                        self.settings.manager_vision or self.settings.executor_vision
-                    ),
-                    id="vision-planning",
+                    value=self.settings.manager_vision, id="vision-manager"
                 )
 
             with HorizontalGroup(classes="field-row"):
-                yield Label("Direct Mode", classes="field-label")
+                yield Label("Executor", classes="field-label")
+                yield BoolToggle(
+                    value=self.settings.executor_vision, id="vision-executor"
+                )
+
+            with HorizontalGroup(classes="field-row"):
+                yield Label("Fast Agent", classes="field-label")
                 yield BoolToggle(
                     value=self.settings.fast_agent_vision, id="vision-fast-agent"
                 )
@@ -68,12 +59,8 @@ class AgentTab(VerticalGroup):
     def collect(self) -> dict:
         """Collect current agent settings."""
         return {
-            "reasoning": self.query_one("#reasoning-mode", BoolToggle).value,
-            "manager_stateless": self.query_one(
-                "#manager-stateless", BoolToggle
-            ).value,
-            "manager_vision": self.query_one("#vision-planning", BoolToggle).value,
-            "executor_vision": self.query_one("#vision-planning", BoolToggle).value,
+            "manager_vision": self.query_one("#vision-manager", BoolToggle).value,
+            "executor_vision": self.query_one("#vision-executor", BoolToggle).value,
             "fast_agent_vision": self.query_one("#vision-fast-agent", BoolToggle).value,
             "max_steps": self.query_one("#max-steps", Input).value.strip(),
             "agent_prompts": {

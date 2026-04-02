@@ -38,14 +38,6 @@ ModelsTab #apply-all-btn {
     min-width: 14;
     margin-bottom: 1;
 }
-ModelsTab .oauth-status {
-    color: #838BBC;
-    width: 1fr;
-    padding-top: 1;
-}
-ModelsTab Button[id^="oauth-help-"] {
-    min-width: 14;
-}
 ModelsTab .kwargs-label {
     color: #52525b;
     margin-top: 1;

@@ -67,8 +67,6 @@ class SettingsScreen(ModalScreen[SettingsData | None]):
         return SettingsData(
             profiles=profiles,
             agent_prompts=agent.get("agent_prompts", {}),
-            reasoning=agent["reasoning"],
-            manager_stateless=agent["manager_stateless"],
             manager_vision=agent["manager_vision"],
             executor_vision=agent["executor_vision"],
             fast_agent_vision=agent["fast_agent_vision"],
