@@ -3,45 +3,151 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from droidrun.config_manager.config_manager import DroidConfig
 
+from droidrun.agent.providers.registry import list_provider_families, resolve_provider_variant
+from droidrun.agent.providers.setup_service import (
+    SetupSelection,
+    create_profile_for_variant,
+)
 from droidrun.config_manager.env_keys import load_env_keys, save_env_keys
-
-PROVIDERS = [
-    "GoogleGenAI",
-    "gemini_oauth_code_assist",
-    "OpenAI",
-    "openai_oauth",
-    "Anthropic",
-    "anthropic_oauth",
-    "Ollama",
-    "OpenAILike",
-]
+from droidrun.config_manager.credential_paths import (
+    ANTHROPIC_OAUTH_CREDENTIAL_PATH,
+    GEMINI_OAUTH_CREDENTIAL_PATH,
+    OPENAI_OAUTH_CREDENTIAL_PATH,
+)
 
 AGENT_ROLES = ["manager", "executor", "fast_agent"]
 
-# Maps provider name to the env key slot used by save_env_keys/load_env_keys.
-# Providers not listed here store their api_key in kwargs instead.
+
+@dataclass(frozen=True)
+class ProviderChoice:
+    id: str
+    label: str
+    family_id: str
+    auth_mode: str
+    runtime_provider_name: str
+    requires_api_key: bool
+    requires_base_url: bool
+    credential_path: str | None
+    base_url: str | None
+    models: tuple[str, ...]
+
+
+def _provider_label(display_name: str, auth_mode: str) -> str:
+    if auth_mode == "none":
+        return display_name
+    if auth_mode == "api_key":
+        return f"{display_name} (API key)"
+    if auth_mode == "oauth":
+        return f"{display_name} (OAuth)"
+    return f"{display_name} ({auth_mode.replace('_', ' ')})"
+
+
+def _build_provider_choices() -> dict[str, ProviderChoice]:
+    result: dict[str, ProviderChoice] = {}
+    for family in list_provider_families():
+        for variant in family.variants:
+            result[variant.id] = ProviderChoice(
+                id=variant.id,
+                label=_provider_label(family.display_name, variant.auth_mode),
+                family_id=family.id,
+                auth_mode=variant.auth_mode,
+                runtime_provider_name=variant.runtime_provider_name,
+                requires_api_key=variant.requires_api_key,
+                requires_base_url=variant.requires_base_url,
+                credential_path=variant.credential_path,
+                base_url=variant.base_url,
+                models=tuple(model.id for model in variant.models),
+            )
+    return result
+
+
+PROVIDER_CHOICES = _build_provider_choices()
+PROVIDERS = list(PROVIDER_CHOICES.keys())
+
+# Maps provider variant id to the env key slot used by save_env_keys/load_env_keys.
 PROVIDER_ENV_KEY_SLOT: dict[str, str] = {
     "GoogleGenAI": "google",
     "OpenAI": "openai",
     "Anthropic": "anthropic",
 }
 
-# Which fields are relevant per provider.
-PROVIDER_FIELDS: dict[str, dict[str, Any]] = {
-    "GoogleGenAI": {"api_key": True, "base_url": False},
-    "gemini_oauth_code_assist": {"api_key": False, "base_url": False},
-    "OpenAI": {"api_key": True, "base_url": False},
-    "openai_oauth": {"api_key": False, "base_url": False},
-    "Anthropic": {"api_key": True, "base_url": False},
-    "anthropic_oauth": {"api_key": False, "base_url": False},
-    "Ollama": {"api_key": False, "base_url": True},
-    "OpenAILike": {"api_key": True, "base_url": True},
-}
+
+def provider_fields(variant_id: str) -> dict[str, bool]:
+    choice = PROVIDER_CHOICES[variant_id]
+    return {
+        "api_key": choice.requires_api_key,
+        "base_url": choice.requires_base_url,
+    }
+
+
+def provider_label(variant_id: str) -> str:
+    return PROVIDER_CHOICES[variant_id].label
+
+
+def provider_models(variant_id: str) -> tuple[str, ...]:
+    return PROVIDER_CHOICES[variant_id].models
+
+
+def provider_credential_path(variant_id: str) -> str | None:
+    return PROVIDER_CHOICES[variant_id].credential_path
+
+
+def provider_oauth_command(variant_id: str) -> str | None:
+    if variant_id == "anthropic_oauth":
+        return "droidrun setup-token"
+    if variant_id == "openai_oauth":
+        return "droidrun openai login"
+    if variant_id == "gemini_oauth_code_assist":
+        return "droidrun gemini login"
+    return None
+
+
+def provider_oauth_status(variant_id: str) -> str | None:
+    path = None
+    if variant_id == "anthropic_oauth":
+        path = ANTHROPIC_OAUTH_CREDENTIAL_PATH
+    elif variant_id == "openai_oauth":
+        path = OPENAI_OAUTH_CREDENTIAL_PATH
+    elif variant_id == "gemini_oauth_code_assist":
+        path = GEMINI_OAUTH_CREDENTIAL_PATH
+    if path is None or not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return "Credential file found"
+    if variant_id == "anthropic_oauth":
+        token = (payload.get("claudeAiOauth") or {}).get("accessToken")
+        return "Token saved" if token else "Credential file found"
+    if variant_id == "openai_oauth":
+        token = payload.get("access") or payload.get("access_token")
+        return "Logged in" if token else "Credential file found"
+    if variant_id == "gemini_oauth_code_assist":
+        token = payload.get("access_token")
+        return "Logged in" if token else "Credential file found"
+    return None
+
+
+def resolve_variant_id_from_profile(profile: Any) -> str:
+    family_id = getattr(profile, "provider_family", None)
+    auth_mode = getattr(profile, "auth_mode", None)
+    if family_id and auth_mode:
+        try:
+            return resolve_provider_variant(family_id, auth_mode).id
+        except Exception:
+            pass
+
+    provider_name = getattr(profile, "provider", "")
+    for choice in PROVIDER_CHOICES.values():
+        if choice.runtime_provider_name == provider_name:
+            return choice.id
+    return "GoogleGenAI"
 
 
 @dataclass
@@ -51,8 +157,10 @@ class ProfileSettings:
     provider: str = "GoogleGenAI"
     model: str = "gemini-3.1-flash-lite-preview"
     temperature: float = 0.2
+    max_tokens: str = ""
     api_key: str = ""
     base_url: str = ""
+    credential_path: str = ""
     kwargs: dict[str, str] = field(default_factory=dict)
 
 
@@ -60,43 +168,33 @@ class ProfileSettings:
 class SettingsData:
     """All TUI settings in one object."""
 
-    # Per-agent LLM profiles (the real config, no fake global)
     profiles: dict[str, ProfileSettings] = field(
         default_factory=lambda: {role: ProfileSettings() for role in AGENT_ROLES}
     )
-
-    # Per-agent custom prompt paths
     agent_prompts: dict[str, str] = field(
         default_factory=lambda: {role: "" for role in AGENT_ROLES}
     )
-
-    # Agent
     manager_vision: bool = True
     executor_vision: bool = False
     fast_agent_vision: bool = False
+    reasoning: bool = False
+    manager_stateless: bool = False
     max_steps: int = 15
-
-    # Advanced
     use_tcp: bool = False
     debug: bool = False
     save_trajectory: bool = False
     trajectory_gifs: bool = True
     tracing_enabled: bool = False
     tracing_provider: str = "phoenix"
-
-    # Langfuse
     langfuse_host: str = ""
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_screenshots: bool = False
-
-    # Timing
     after_sleep_action: float = 1.0
     wait_for_stable_ui: float = 0.3
 
     @classmethod
     def from_config(cls, config: DroidConfig) -> SettingsData:
-        """Build settings from a loaded DroidConfig."""
         llm_profiles = config.llm_profiles or {}
         env_keys = load_env_keys()
 
@@ -104,25 +202,27 @@ class SettingsData:
         for role in AGENT_ROLES:
             lp = llm_profiles.get(role)
             if lp:
-                # Determine API key source
-                provider = lp.provider
-                env_slot = PROVIDER_ENV_KEY_SLOT.get(provider)
+                variant_id = resolve_variant_id_from_profile(lp)
+                env_slot = PROVIDER_ENV_KEY_SLOT.get(variant_id)
                 if env_slot:
                     api_key = env_keys.get(env_slot, "")
-                elif provider == "OpenAILike":
-                    api_key = lp.kwargs.get("api_key", "stub")
+                elif variant_id in {"OpenAILike", "ZAI", "ZAI_Coding", "MiniMax"}:
+                    api_key = str(lp.kwargs.get("api_key", "") or "")
                 else:
-                    api_key = lp.kwargs.get("api_key", "")
+                    api_key = ""
 
-                # Build kwargs without api_key (shown separately)
                 kwargs = {k: str(v) for k, v in lp.kwargs.items() if k != "api_key"}
+                max_tokens = str(lp.kwargs.get("max_tokens", "") or "")
+                kwargs.pop("max_tokens", None)
 
                 profiles[role] = ProfileSettings(
-                    provider=provider,
+                    provider=variant_id,
                     model=lp.model,
                     temperature=lp.temperature,
+                    max_tokens=max_tokens,
                     api_key=api_key,
                     base_url=lp.base_url or lp.api_base or "",
+                    credential_path=lp.credential_path or "",
                     kwargs=kwargs,
                 )
             else:
@@ -140,6 +240,8 @@ class SettingsData:
             manager_vision=config.agent.manager.vision,
             executor_vision=config.agent.executor.vision,
             fast_agent_vision=config.agent.fast_agent.vision,
+            reasoning=config.agent.reasoning,
+            manager_stateless=config.agent.manager.stateless,
             max_steps=config.agent.max_steps,
             use_tcp=config.device.use_tcp,
             debug=config.logging.debug,
@@ -156,17 +258,14 @@ class SettingsData:
         )
 
     def save(self) -> None:
-        """Persist all settings: API keys to .env and config to config.yaml."""
         from droidrun.config_manager.loader import ConfigLoader
 
-        # Save env-based API keys for all cloud providers that have a key set
-        env_keys: dict[str, str] = {}
-        for role, profile in self.profiles.items():
+        env_keys = load_env_keys()
+        for _, profile in self.profiles.items():
             env_slot = PROVIDER_ENV_KEY_SLOT.get(profile.provider)
-            if env_slot and profile.api_key:
-                env_keys[env_slot] = profile.api_key
-        if env_keys:
-            save_env_keys(env_keys)
+            if env_slot:
+                env_keys[env_slot] = profile.api_key.strip()
+        save_env_keys(env_keys)
 
         try:
             config = ConfigLoader.load()
@@ -180,7 +279,6 @@ class SettingsData:
 
     @staticmethod
     def _build_kwargs(ps: ProfileSettings) -> dict[str, Any]:
-        """Parse kwargs string values to typed values and inject api_key for OpenAILike."""
         parsed: dict[str, Any] = {}
         for k, v in ps.kwargs.items():
             if not k:
@@ -192,48 +290,54 @@ class SettingsData:
                     parsed[k] = float(v)
                 except ValueError:
                     parsed[k] = v
-        if ps.provider == "OpenAILike":
-            parsed["api_key"] = ps.api_key or "stub"
+
+        if ps.provider in {"OpenAILike", "ZAI", "ZAI_Coding", "MiniMax"}:
+            parsed["api_key"] = ps.api_key or ("stub" if ps.provider != "MiniMax" else "")
+        if ps.max_tokens.strip():
+            try:
+                parsed["max_tokens"] = int(ps.max_tokens.strip())
+            except ValueError:
+                parsed["max_tokens"] = ps.max_tokens.strip()
         return parsed
 
     @staticmethod
     def _apply_profile_to_llm(
         ps: ProfileSettings, cp: Any, update_model: bool = True
     ) -> None:
-        """Write a ProfileSettings onto an LLMProfile config object."""
-        cp.provider = ps.provider
+        choice = PROVIDER_CHOICES[ps.provider]
+        selection = SetupSelection(
+            family_id=choice.family_id,
+            variant_id=choice.id,
+            auth_mode=choice.auth_mode,
+            model=ps.model,
+            api_key=ps.api_key or None,
+            base_url=ps.base_url or None,
+            credential_path=ps.credential_path or choice.credential_path,
+        )
+        variant = resolve_provider_variant(choice.family_id, choice.auth_mode)
+        generated = create_profile_for_variant(
+            variant,
+            selection,
+            temperature=ps.temperature,
+        )
+
+        cp.provider = generated.provider
+        cp.provider_family = generated.provider_family
+        cp.auth_mode = generated.auth_mode
+        cp.credential_path = generated.credential_path
+        cp.base_url = generated.base_url
+        cp.api_base = generated.api_base
         if update_model:
-            cp.model = ps.model
+            cp.model = generated.model
         cp.temperature = ps.temperature
-        if ps.base_url:
-            cp.base_url = ps.base_url
-            if ps.provider == "OpenAILike":
-                cp.api_base = ps.base_url
-        else:
-            cp.base_url = None
-            cp.api_base = None
-        cp.kwargs = SettingsData._build_kwargs(ps)
+        cp.kwargs = generated.kwargs | SettingsData._build_kwargs(ps)
 
     def apply_to_config(self, config: DroidConfig) -> None:
-        """Apply all TUI settings onto a DroidConfig, in place."""
         for role, ps in self.profiles.items():
             if role not in config.llm_profiles:
                 continue
             self._apply_profile_to_llm(ps, config.llm_profiles[role])
 
-        # Propagate fast_agent settings to hidden roles (app_opener, structured_output)
-        # keeping their existing model (these are usually lighter models)
-        fast_agent_ps = self.profiles.get("fast_agent")
-        if fast_agent_ps:
-            for hidden_role in ("app_opener", "structured_output"):
-                if hidden_role in config.llm_profiles:
-                    self._apply_profile_to_llm(
-                        fast_agent_ps,
-                        config.llm_profiles[hidden_role],
-                        update_model=False,
-                    )
-
-        # Per-agent prompt paths
         prompt = self.agent_prompts.get("manager", "")
         if prompt:
             config.agent.manager.system_prompt = prompt
@@ -243,28 +347,22 @@ class SettingsData:
         prompt = self.agent_prompts.get("fast_agent", "")
         if prompt:
             config.agent.fast_agent.system_prompt = prompt
-        # Agent
+
         config.agent.max_steps = self.max_steps
+        config.agent.reasoning = self.reasoning
+        config.agent.manager.stateless = self.manager_stateless
         config.agent.manager.vision = self.manager_vision
         config.agent.executor.vision = self.executor_vision
         config.agent.fast_agent.vision = self.fast_agent_vision
-
-        # Device
         config.device.use_tcp = self.use_tcp
-
-        # Logging
         config.logging.debug = self.debug
         config.logging.save_trajectory = "action" if self.save_trajectory else "none"
         config.logging.trajectory_gifs = self.trajectory_gifs
-
-        # Tracing
         config.tracing.enabled = self.tracing_enabled
         config.tracing.provider = self.tracing_provider
         config.tracing.langfuse_host = self.langfuse_host
         config.tracing.langfuse_public_key = self.langfuse_public_key
         config.tracing.langfuse_secret_key = self.langfuse_secret_key
         config.tracing.langfuse_screenshots = self.langfuse_screenshots
-
-        # Timing
         config.agent.after_sleep_action = self.after_sleep_action
         config.agent.wait_for_stable_ui = self.wait_for_stable_ui

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from dotenv import dotenv_values, set_key
+from dotenv import dotenv_values, set_key, unset_key
 from droidrun.config_manager.credential_paths import API_KEY_ENV_FILE
 
 ENV_FILE = API_KEY_ENV_FILE
@@ -43,8 +43,13 @@ def save_env_keys(keys: dict[str, str]) -> None:
     ENV_FILE.parent.mkdir(parents=True, exist_ok=True)
     if not ENV_FILE.exists():
         ENV_FILE.touch()
-    for slot, env_var in API_KEY_ENV_VARS.items():
-        val = keys.get(slot, "")
+    for slot, val in keys.items():
+        env_var = API_KEY_ENV_VARS.get(slot)
+        if not env_var:
+            continue
         if val:
             set_key(str(ENV_FILE), env_var, val)
             os.environ[env_var] = val
+        else:
+            unset_key(str(ENV_FILE), env_var, quote_mode="never")
+            os.environ.pop(env_var, None)
