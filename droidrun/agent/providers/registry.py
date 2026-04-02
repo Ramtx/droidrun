@@ -14,7 +14,7 @@ from droidrun.config_manager.credential_paths import (
 
 OPENAI_OAUTH_MODELS = (
     ModelSpec("gpt-5.4"),
-    ModelSpec("gpt-5.3-codex"),
+    ModelSpec("gpt-5.3-codex-spark"),
 )
 
 
@@ -60,8 +60,9 @@ PROVIDER_FAMILIES: tuple[ProviderFamilySpec, ...] = (
                 default_model="gpt-5.4",
                 models=(
                     ModelSpec("gpt-5.4"),
-                    ModelSpec("gpt-5-mini"),
-                    ModelSpec("gpt-5-nano"),
+                    ModelSpec("gpt-5.4-pro"),
+                    ModelSpec("gpt-5.4-mini"),
+                    ModelSpec("gpt-5.4-nano"),
                 ),
                 requires_api_key=True,
             ),

@@ -51,5 +51,7 @@ def save_env_keys(keys: dict[str, str]) -> None:
             set_key(str(ENV_FILE), env_var, val)
             os.environ[env_var] = val
         else:
-            unset_key(str(ENV_FILE), env_var, quote_mode="never")
+            success, _ = unset_key(str(ENV_FILE), env_var, quote_mode="never")
+            if success is None:
+                pass
             os.environ.pop(env_var, None)
