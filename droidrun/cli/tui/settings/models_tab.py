@@ -184,7 +184,9 @@ class _ProfileCard(Section):
                 )
 
             oauth_command = provider_oauth_command(self._profile.provider)
-            oauth_status = provider_oauth_status(self._profile.provider)
+            oauth_status = provider_oauth_status(
+                self._profile.provider, self._profile.credential_path
+            )
             oauth_cls = (
                 "field-row" if oauth_command is not None else "field-row hidden-field"
             )
@@ -214,7 +216,12 @@ class _ProfileCard(Section):
         model_select = self.query_one(f"#model-select-{self._role}", Select)
         model_input = self.query_one(f"#model-input-{self._role}", Input)
         model_choices = provider_models(provider)
-        oauth_message = provider_oauth_status(provider)
+        current_path = (
+            self._profile.credential_path
+            if provider == self._profile.provider and self._profile.credential_path
+            else provider_credential_path(provider)
+        )
+        oauth_message = provider_oauth_status(provider, current_path)
 
         if pf.get("api_key"):
             api_row.remove_class("hidden-field")
@@ -333,11 +340,12 @@ class ModelsTab(VerticalGroup):
             self.app.notify(message, title="OAuth Error", timeout=6)
             return
 
-        updated = provider_oauth_status(provider) or "Configured"
+        updated = provider_oauth_status(provider, credential_path) or "Configured"
         status.update(updated)
         card = next(card for card in self.query(_ProfileCard) if card._role == role)
-        self.settings.profiles[role] = card.collect()
-        self.settings.save()
+        card._profile.credential_path = credential_path or card._profile.credential_path
+        card._profile.provider = provider
+        card._profile.model = model
         self.app.notify(f"{provider_label(provider)} ready", title="OAuth", timeout=3)
 
     def _run_oauth_flow_blocking(
@@ -386,7 +394,12 @@ class ModelsTab(VerticalGroup):
                 url_row.add_class("hidden-field")
             if provider_oauth_command(source.provider):
                 oauth_row.remove_class("hidden-field")
-                oauth_status.update(provider_oauth_status(source.provider) or "Not configured")
+                oauth_status.update(
+                    provider_oauth_status(
+                        source.provider, source.credential_path or provider_credential_path(source.provider)
+                    )
+                    or "Not configured"
+                )
             else:
                 oauth_row.add_class("hidden-field")
             if model_choices:

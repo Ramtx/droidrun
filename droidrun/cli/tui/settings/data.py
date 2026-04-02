@@ -108,14 +108,15 @@ def provider_oauth_command(variant_id: str) -> str | None:
     return None
 
 
-def provider_oauth_status(variant_id: str) -> str | None:
-    path = None
-    if variant_id == "anthropic_oauth":
-        path = ANTHROPIC_OAUTH_CREDENTIAL_PATH
-    elif variant_id == "openai_oauth":
-        path = OPENAI_OAUTH_CREDENTIAL_PATH
-    elif variant_id == "gemini_oauth_code_assist":
-        path = GEMINI_OAUTH_CREDENTIAL_PATH
+def provider_oauth_status(variant_id: str, credential_path: str | None = None) -> str | None:
+    path = Path(credential_path).expanduser() if credential_path else None
+    if path is None:
+        if variant_id == "anthropic_oauth":
+            path = ANTHROPIC_OAUTH_CREDENTIAL_PATH
+        elif variant_id == "openai_oauth":
+            path = OPENAI_OAUTH_CREDENTIAL_PATH
+        elif variant_id == "gemini_oauth_code_assist":
+            path = GEMINI_OAUTH_CREDENTIAL_PATH
     if path is None or not path.exists():
         return None
     try:
