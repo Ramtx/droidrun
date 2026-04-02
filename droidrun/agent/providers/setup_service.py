@@ -61,22 +61,27 @@ def create_profile_for_variant(
     base_url = selection.base_url or variant.base_url
     kwargs: dict[str, str | int] = dict(DEFAULT_KWARGS_BY_VARIANT.get(variant.id, {}))
     env_slot = ENV_KEY_SLOTS_BY_VARIANT.get(variant.id)
+    runtime_provider_name = (
+        variant.runtime_transport_provider_name or variant.runtime_provider_name
+    )
 
     if variant.id == "OpenAILike":
         kwargs["api_key"] = selection.api_key or "stub"
     elif variant.id == "ZAI":
         kwargs["api_key"] = selection.api_key or "stub"
+    elif variant.id == "ZAI_Coding":
+        kwargs["api_key"] = selection.api_key or "stub"
     elif variant.id == "MiniMax":
         kwargs["api_key"] = selection.api_key or ""
 
     return LLMProfile(
-        provider=variant.runtime_provider_name,
+        provider=runtime_provider_name,
         provider_family=selection.family_id,
         auth_mode=selection.auth_mode,
         model=selection.model,
         temperature=temperature,
         base_url=base_url,
-        api_base=base_url if variant.runtime_provider_name == "OpenAILike" else None,
+        api_base=base_url if runtime_provider_name == "OpenAILike" else None,
         credential_path=selection.credential_path or variant.credential_path,
         kwargs=kwargs if env_slot is None else {},
     )
