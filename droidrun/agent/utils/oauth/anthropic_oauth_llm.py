@@ -48,6 +48,9 @@ DEFAULT_OAUTH_BETA = "oauth-2025-04-20"
 DEFAULT_ANTHROPIC_VERSION = "2023-06-01"
 DEFAULT_CC_VERSION = "2.1.85.000"
 DEFAULT_CC_ENTRYPOINT = "cli"
+_IGNORED_REQUEST_KWARGS = {
+    "formatted",
+}
 
 
 def _b64_no_pad(raw: bytes) -> str:
@@ -586,10 +589,20 @@ class AnthropicOAuthLLM(CustomLLM):
                 blocks.append({"type": "text", "text": line})
         return blocks
 
+    @staticmethod
+    def _sanitize_request_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """Drop framework-only kwargs that are invalid for Anthropic's API."""
+        return {
+            key: value
+            for key, value in kwargs.items()
+            if key not in _IGNORED_REQUEST_KWARGS and value is not None
+        }
+
     @llm_chat_callback()
     def chat(self, messages: Sequence[ChatMessage], **kwargs: Any) -> ChatResponse:
         provider_messages, system_lines = self._to_provider_messages(messages)
         token = self._resolve_access_token()
+        request_kwargs = self._sanitize_request_kwargs(kwargs)
 
         payload: Dict[str, Any] = {
             "model": self.model,
@@ -603,7 +616,7 @@ class AnthropicOAuthLLM(CustomLLM):
             payload["system"] = system_blocks
 
         payload.update(self.additional_kwargs)
-        payload.update(kwargs)
+        payload.update(request_kwargs)
 
         headers = {
             "Authorization": f"Bearer {token}",
@@ -640,8 +653,14 @@ class AnthropicOAuthLLM(CustomLLM):
         )
 
     @llm_completion_callback()
-    def complete(self, prompt: str, **kwargs: Any) -> CompletionResponse:
-        resp = self.chat([ChatMessage(role=MessageRole.USER, content=prompt)], **kwargs)
+    def complete(
+        self, prompt: str, formatted: bool = False, **kwargs: Any
+    ) -> CompletionResponse:
+        del formatted
+        resp = self.chat(
+            [ChatMessage(role=MessageRole.USER, content=prompt)],
+            **self._sanitize_request_kwargs(kwargs),
+        )
         return CompletionResponse(
             text=resp.message.content or "",
             raw=resp.raw,

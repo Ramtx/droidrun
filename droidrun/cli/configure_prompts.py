@@ -34,9 +34,9 @@ def select_prompt(
     if inquirer is not None:
         rendered = []
         for choice in choices:
-            name = choice.label
+            name = f"• {choice.label}"
             if choice.hint:
-                name = f"{name}  {choice.hint}"
+                name = f"{name} ({choice.hint})"
             rendered.append({"name": name, "value": choice.value})
         return str(
             inquirer.select(
