@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
+import httpx
+
 from droidrun.agent.providers import (
     ProviderFamilySpec,
     ProviderVariantSpec,
@@ -25,6 +27,8 @@ DEFAULT_KWARGS_BY_VARIANT: dict[str, dict[str, int]] = {
 }
 
 HIDDEN_ROLE_FALLBACKS: tuple[str, ...] = ("app_opener", "structured_output")
+_ZAI_GLOBAL_BASE_URL = "https://api.z.ai/api/paas/v4"
+_ZAI_CODING_GLOBAL_BASE_URL = "https://api.z.ai/api/coding/paas/v4"
 
 
 @dataclass(frozen=True)
@@ -52,6 +56,79 @@ def variant_models(family_id: str, auth_mode: str) -> tuple[str, ...]:
     return tuple(model.id for model in variant.models)
 
 
+def _probe_zai_chat_completions(
+    *,
+    base_url: str,
+    api_key: str,
+    model_id: str,
+    timeout_seconds: float = 5.0,
+) -> bool:
+    try:
+        response = httpx.post(
+            f"{base_url.rstrip('/')}/chat/completions",
+            headers={
+                "authorization": f"Bearer {api_key}",
+                "content-type": "application/json",
+            },
+            json={
+                "model": model_id,
+                "stream": False,
+                "max_tokens": 1,
+                "messages": [{"role": "user", "content": "ping"}],
+            },
+            timeout=timeout_seconds,
+        )
+        return response.is_success
+    except Exception:
+        return False
+
+
+def _resolve_zai_selection(
+    selection: SetupSelection,
+    base_url: str | None,
+) -> tuple[str | None, str]:
+    """Resolve the effective ZAI base URL and model.
+
+    We only support the two user-facing modes:
+    - api_key -> global endpoint
+    - coding_api -> coding-global endpoint
+
+    For coding_api, probe glm-5 first and fall back to glm-4.7 when the
+    provided token/plan does not expose glm-5 on the coding endpoint.
+    """
+    effective_base_url = base_url
+    effective_model = selection.model
+
+    if selection.family_id != "zai":
+        return effective_base_url, effective_model
+
+    if not effective_base_url:
+        effective_base_url = (
+            _ZAI_CODING_GLOBAL_BASE_URL
+            if selection.auth_mode == "coding_api"
+            else _ZAI_GLOBAL_BASE_URL
+        )
+
+    if (
+        selection.auth_mode == "coding_api"
+        and selection.api_key
+        and selection.model == "glm-5"
+        and not _probe_zai_chat_completions(
+            base_url=effective_base_url,
+            api_key=selection.api_key,
+            model_id="glm-5",
+        )
+        and _probe_zai_chat_completions(
+            base_url=effective_base_url,
+            api_key=selection.api_key,
+            model_id="glm-4.7",
+        )
+    ):
+        effective_model = "glm-4.7"
+
+    return effective_base_url, effective_model
+
+
 def create_profile_for_variant(
     variant: ProviderVariantSpec,
     selection: SetupSelection,
@@ -59,6 +136,7 @@ def create_profile_for_variant(
     temperature: float = 0.2,
 ) -> LLMProfile:
     base_url = selection.base_url or variant.base_url
+    base_url, resolved_model = _resolve_zai_selection(selection, base_url)
     kwargs: dict[str, str | int] = dict(DEFAULT_KWARGS_BY_VARIANT.get(variant.id, {}))
     env_slot = ENV_KEY_SLOTS_BY_VARIANT.get(variant.id)
     runtime_provider_name = (
@@ -78,7 +156,7 @@ def create_profile_for_variant(
         provider=runtime_provider_name,
         provider_family=selection.family_id,
         auth_mode=selection.auth_mode,
-        model=selection.model,
+        model=resolved_model,
         temperature=temperature,
         base_url=base_url,
         api_base=base_url if runtime_provider_name == "OpenAILike" else None,

@@ -48,13 +48,15 @@ def load_llm(provider_name: str, model: str | None = None, **kwargs: Any) -> LLM
     # Add model to kwargs if provided as positional argument
     if model is not None:
         kwargs["model"] = model
-    filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
     if provider_name == "openai_oauth":
+        filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
         return openai_oauth_llm.OpenAIOAuth(**filtered_kwargs)
     elif provider_name == "anthropic_oauth":
+        filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
         return anthropic_oauth_llm.AnthropicOAuthLLM(**filtered_kwargs)
     elif provider_name == "gemini_oauth_code_assist":
+        filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
         return gemini_oauth_code_assist_llm.GeminiOAuthCodeAssistLLM(
             **filtered_kwargs
         )
@@ -105,6 +107,7 @@ def load_llm(provider_name: str, model: str | None = None, **kwargs: Any) -> LLM
             )
 
         # Initialize
+        filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
         logger.debug(
             f"Initializing {llm_class.__name__} with kwargs: {list(filtered_kwargs.keys())}"
         )
