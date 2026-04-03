@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from droidrun.config_manager.config_manager import DroidConfig
 
-from droidrun.config_manager.env_keys import load_env_keys, save_env_keys
+from droidrun.config_manager.env_keys import load_env_key_sources, save_env_keys
 
 PROVIDERS = [
     "GoogleGenAI",
@@ -30,11 +30,11 @@ PROVIDER_ENV_KEY_SLOT: dict[str, str] = {
 
 # Which fields are relevant per provider.
 PROVIDER_FIELDS: dict[str, dict[str, Any]] = {
-    "GoogleGenAI": {"api_key": True, "base_url": False},
-    "OpenAI": {"api_key": True, "base_url": False},
-    "Anthropic": {"api_key": True, "base_url": False},
-    "Ollama": {"api_key": False, "base_url": True},
-    "OpenAILike": {"api_key": True, "base_url": True},
+    "GoogleGenAI": {"api_key": True, "api_source": True, "base_url": False},
+    "OpenAI": {"api_key": True, "api_source": True, "base_url": False},
+    "Anthropic": {"api_key": True, "api_source": True, "base_url": False},
+    "Ollama": {"api_key": False, "api_source": False, "base_url": True},
+    "OpenAILike": {"api_key": True, "api_source": False, "base_url": True},
 }
 
 
@@ -46,6 +46,7 @@ class ProfileSettings:
     model: str = "gemini-3.1-flash-lite-preview"
     temperature: float = 0.2
     api_key: str = ""
+    api_key_source: str = "auto"
     base_url: str = ""
     kwargs: dict[str, str] = field(default_factory=dict)
 
@@ -94,7 +95,7 @@ class SettingsData:
     def from_config(cls, config: DroidConfig) -> SettingsData:
         """Build settings from a loaded DroidConfig."""
         llm_profiles = config.llm_profiles or {}
-        env_keys = load_env_keys()
+        env_key_sources = load_env_key_sources()
 
         profiles: dict[str, ProfileSettings] = {}
         for role in AGENT_ROLES:
@@ -104,11 +105,22 @@ class SettingsData:
                 provider = lp.provider
                 env_slot = PROVIDER_ENV_KEY_SLOT.get(provider)
                 if env_slot:
-                    api_key = env_keys.get(env_slot, "")
+                    sources = env_key_sources.get(env_slot)
+                    selected_source = getattr(lp, "api_key_source", "auto") or "auto"
+                    if selected_source == "env":
+                        api_key = sources.shell if sources else ""
+                    elif selected_source == "file":
+                        api_key = sources.saved if sources else ""
+                    else:
+                        api_key = ""
+                        if sources:
+                            api_key = sources.shell or sources.saved
                 elif provider == "OpenAILike":
                     api_key = lp.kwargs.get("api_key", "stub")
+                    selected_source = "auto"
                 else:
                     api_key = lp.kwargs.get("api_key", "")
+                    selected_source = "auto"
 
                 # Build kwargs without api_key (shown separately)
                 kwargs = {k: str(v) for k, v in lp.kwargs.items() if k != "api_key"}
@@ -118,6 +130,7 @@ class SettingsData:
                     model=lp.model,
                     temperature=lp.temperature,
                     api_key=api_key,
+                    api_key_source=selected_source,
                     base_url=lp.base_url or lp.api_base or "",
                     kwargs=kwargs,
                 )
@@ -161,7 +174,7 @@ class SettingsData:
         env_keys: dict[str, str] = {}
         for role, profile in self.profiles.items():
             env_slot = PROVIDER_ENV_KEY_SLOT.get(profile.provider)
-            if env_slot and profile.api_key:
+            if env_slot and profile.api_key and profile.api_key_source != "env":
                 env_keys[env_slot] = profile.api_key
         if env_keys:
             save_env_keys(env_keys)
@@ -203,6 +216,7 @@ class SettingsData:
         if update_model:
             cp.model = ps.model
         cp.temperature = ps.temperature
+        cp.api_key_source = ps.api_key_source
         if ps.base_url:
             cp.base_url = ps.base_url
             if ps.provider == "OpenAILike":

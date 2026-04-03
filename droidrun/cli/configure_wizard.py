@@ -179,16 +179,34 @@ def _prompt_model_choice(
     allow_back: bool = True,
 ) -> str:
     if models:
-        return _select_with_back(
+        choice = _select_with_back(
             "Choose model",
-            [SelectChoice(value=item, label=item) for item in models],
+            [
+                *[SelectChoice(value=item, label=item) for item in models],
+                SelectChoice(
+                    value="enter_model",
+                    label="Enter custom model",
+                    hint="Use a model id not listed in the built-in catalog",
+                ),
+            ],
             default=default_model or None,
             include_back=allow_back,
         )
+        if choice in {_BACK, "enter_model"}:
+            if choice == _BACK:
+                return _BACK
+            return text_prompt("Model", default=default_model)
+        return choice
 
     choice = _select_with_back(
         "Choose model",
-        [SelectChoice(value="enter_model", label="Enter model")],
+        [
+            SelectChoice(
+                value="enter_model",
+                label="Enter custom model",
+                hint="Use a model id not listed in the built-in catalog",
+            )
+        ],
         default="enter_model",
         include_back=allow_back,
     )
