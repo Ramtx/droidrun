@@ -19,6 +19,8 @@ ENV_KEY_SLOTS_BY_VARIANT: dict[str, str] = {
     "GoogleGenAI": "google",
     "OpenAI": "openai",
     "Anthropic": "anthropic",
+    "ZAI": "zai",
+    "ZAI_Coding": "zai",
 }
 
 DEFAULT_KWARGS_BY_VARIANT: dict[str, dict[str, int]] = {
@@ -38,6 +40,7 @@ class SetupSelection:
     auth_mode: str
     model: str
     api_key: str | None = None
+    api_key_source: str = "auto"
     base_url: str | None = None
     credential_path: str | None = None
 
@@ -144,11 +147,11 @@ def create_profile_for_variant(
     )
 
     if variant.id == "OpenAILike":
-        kwargs["api_key"] = selection.api_key or "stub"
-    elif variant.id == "ZAI":
-        kwargs["api_key"] = selection.api_key or "stub"
-    elif variant.id == "ZAI_Coding":
-        kwargs["api_key"] = selection.api_key or "stub"
+        if selection.api_key_source != "env":
+            kwargs["api_key"] = selection.api_key or "stub"
+    elif variant.id in {"ZAI", "ZAI_Coding"}:
+        if selection.api_key_source != "env":
+            kwargs["api_key"] = selection.api_key or "stub"
     elif variant.id == "MiniMax":
         kwargs["api_key"] = selection.api_key or ""
 
@@ -158,6 +161,7 @@ def create_profile_for_variant(
         auth_mode=selection.auth_mode,
         model=resolved_model,
         temperature=temperature,
+        api_key_source=selection.api_key_source,
         base_url=base_url,
         api_base=base_url if runtime_provider_name == "OpenAILike" else None,
         credential_path=selection.credential_path or variant.credential_path,
@@ -172,7 +176,7 @@ def apply_selection_to_roles(
 ) -> DroidConfig:
     variant = resolve_provider_variant(selection.family_id, selection.auth_mode)
     env_slot = ENV_KEY_SLOTS_BY_VARIANT.get(variant.id)
-    if selection.api_key and env_slot:
+    if selection.api_key and env_slot and selection.api_key_source != "env":
         existing = load_env_keys()
         existing[env_slot] = selection.api_key
         try:

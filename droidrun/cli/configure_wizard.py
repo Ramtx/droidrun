@@ -15,7 +15,7 @@ from droidrun.cli.configure_prompts import (
     select_prompt,
     text_prompt,
 )
-from droidrun.config_manager.env_keys import load_env_keys
+from droidrun.config_manager.env_keys import load_env_key_sources, resolve_env_key
 from droidrun.config_manager import ConfigLoader
 from droidrun.agent.providers.setup_service import (
     SetupSelection,
@@ -34,6 +34,8 @@ _VARIANT_ENV_KEY_SLOT = {
     "GoogleGenAI": "google",
     "OpenAI": "openai",
     "Anthropic": "anthropic",
+    "ZAI": "zai",
+    "ZAI_Coding": "zai",
 }
 
 
@@ -53,6 +55,7 @@ class ConfigureWizardState:
     selected_model: str | None = None
     target_roles: tuple[str, ...] = _ALL_CONFIG_ROLES
     selected_api_key: str | None = None
+    selected_api_key_source: str | None = None
     selected_base_url: str | None = None
     last_variant_id: str | None = None
     prepared_auth_variant_id: str | None = None
@@ -194,17 +197,49 @@ def _prompt_model_choice(
     return text_prompt("Model", default=default_model)
 
 
-def _prompt_api_key_for_variant(variant: Any) -> str:
+def _prompt_api_key_source(variant: Any) -> str:
     env_slot = _VARIANT_ENV_KEY_SLOT.get(variant.id)
-    existing = load_env_keys().get(env_slot, "") if env_slot else ""
-    if existing:
-        entered = text_prompt(
-            "API key (press Enter to keep saved key)",
-            default="",
-            secret=True,
+    sources = load_env_key_sources().get(env_slot) if env_slot else None
+    choices: list[SelectChoice] = []
+    if sources and sources.shell:
+        choices.append(
+            SelectChoice(
+                value="env",
+                label="Use env key",
+                hint=f"Read {env_slot.upper()} from the shell environment",
+            )
         )
-        return entered or existing
-    return text_prompt("API key", secret=True)
+    if sources and sources.saved:
+        choices.append(
+            SelectChoice(
+                value="file",
+                label="Use saved key",
+                hint="Use the key already stored in the credentials env file",
+            )
+        )
+    choices.append(
+        SelectChoice(
+            value="paste",
+            label="Paste new key",
+            hint="Store a new key in the credentials env file",
+        )
+    )
+    return _select_with_back("API key source", choices, default=choices[0].value)
+
+
+def _prompt_api_key_for_variant(variant: Any) -> tuple[str, str]:
+    env_slot = _VARIANT_ENV_KEY_SLOT.get(variant.id)
+    if not env_slot:
+        return text_prompt("API key", secret=True), "file"
+
+    source = _prompt_api_key_source(variant)
+    if source == _BACK:
+        return "", _BACK
+    if source == "env":
+        return resolve_env_key(env_slot, "env"), "env"
+    if source == "file":
+        return resolve_env_key(env_slot, "file"), "file"
+    return text_prompt("API key", secret=True), "file"
 
 
 def _prompt_oauth_credential_action(credential_path: str) -> str:
@@ -244,6 +279,7 @@ def _apply_model_selection(
     selected_auth_mode: str,
     selected_model: str,
     selected_api_key: str | None,
+    selected_api_key_source: str | None,
     selected_base_url: str | None,
     credential_path: str | None,
     target_roles: tuple[str, ...],
@@ -254,6 +290,7 @@ def _apply_model_selection(
         auth_mode=selected_auth_mode,
         model=selected_model,
         api_key=selected_api_key,
+        api_key_source=selected_api_key_source or "auto",
         base_url=selected_base_url,
         credential_path=credential_path,
     )
@@ -415,6 +452,7 @@ def run_configure_wizard(
     family_labels = {family.id: family.display_name for family in families}
     state = ConfigureWizardState(
         selected_api_key=api_key,
+        selected_api_key_source="file" if api_key else None,
         selected_base_url=base_url,
     )
 
@@ -506,13 +544,21 @@ def run_configure_wizard(
         if variant.id != state.last_variant_id:
             if api_key is None:
                 state.selected_api_key = None
+                state.selected_api_key_source = None
             if base_url is None:
                 state.selected_base_url = None
             state.last_variant_id = variant.id
             state.prepared_auth_variant_id = None
 
         if variant.requires_api_key and not state.selected_api_key:
-            state.selected_api_key = _prompt_api_key_for_variant(variant)
+            selected_key, selected_source = _prompt_api_key_for_variant(variant)
+            if selected_key == _BACK:
+                if model_is_fixed:
+                    break
+                state.selected_model = None
+                break
+            state.selected_api_key = selected_key
+            state.selected_api_key_source = selected_source
         if variant.requires_base_url and not state.selected_base_url:
             state.selected_base_url = text_prompt(
                 "Base URL", default=variant.base_url or "", secret=False
@@ -572,6 +618,7 @@ def run_configure_wizard(
                 selected_auth_mode=state.selected_auth_mode,
                 selected_model=state.selected_model,
                 selected_api_key=state.selected_api_key,
+                selected_api_key_source=state.selected_api_key_source,
                 selected_base_url=state.selected_base_url,
                 credential_path=credential_path,
                 target_roles=state.target_roles,
